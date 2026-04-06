@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "stock-insight",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["manage.py", "runserver", "8001"],
+      "port": 8001
+    }
+  ]
+}

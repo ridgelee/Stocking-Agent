@@ -1,0 +1,435 @@
+[collector] Starting data collection...
+[collector] tech_media: saved 0 new articles
+[collector] financial_news: saved 50 new articles
+[collector] social_media (Yahoo Finance): saved 10 new articles
+[collector] Done. Total new articles saved: 60
+[collector] tech_media: saved 10 new articles
+[extractor] Starting extraction for 70 articles...
+[extractor] Processing batch 1: articles 1-10
+[extractor] Batch error: unsupported operand type(s) for |: 'type' and 'NoneType'
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 192, in run
+    results = extract_batch(batch)
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 111, in extract_batch
+    def call_claude(prompt: str, retry_msg: str = "") -> list | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+[extractor] Batch done. Extracted so far: 10
+[extractor] Processing batch 2: articles 11-20
+[extractor] Batch error: unsupported operand type(s) for |: 'type' and 'NoneType'
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 192, in run
+    results = extract_batch(batch)
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 111, in extract_batch
+    def call_claude(prompt: str, retry_msg: str = "") -> list | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+[extractor] Batch done. Extracted so far: 20
+[extractor] Processing batch 3: articles 21-30
+[extractor] Batch error: unsupported operand type(s) for |: 'type' and 'NoneType'
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 192, in run
+    results = extract_batch(batch)
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 111, in extract_batch
+    def call_claude(prompt: str, retry_msg: str = "") -> list | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+[extractor] Batch done. Extracted so far: 30
+[extractor] Processing batch 4: articles 31-40
+[extractor] Batch error: unsupported operand type(s) for |: 'type' and 'NoneType'
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 192, in run
+    results = extract_batch(batch)
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 111, in extract_batch
+    def call_claude(prompt: str, retry_msg: str = "") -> list | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+[extractor] Batch done. Extracted so far: 40
+[extractor] Processing batch 5: articles 41-50
+[extractor] Batch error: unsupported operand type(s) for |: 'type' and 'NoneType'
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 192, in run
+    results = extract_batch(batch)
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 111, in extract_batch
+    def call_claude(prompt: str, retry_msg: str = "") -> list | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+[extractor] Batch done. Extracted so far: 50
+[extractor] Processing batch 6: articles 51-60
+[extractor] Batch error: unsupported operand type(s) for |: 'type' and 'NoneType'
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 192, in run
+    results = extract_batch(batch)
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 111, in extract_batch
+    def call_claude(prompt: str, retry_msg: str = "") -> list | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+[extractor] Batch done. Extracted so far: 60
+[extractor] Processing batch 7: articles 61-70
+[extractor] Batch error: unsupported operand type(s) for |: 'type' and 'NoneType'
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 192, in run
+    results = extract_batch(batch)
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 111, in extract_batch
+    def call_claude(prompt: str, retry_msg: str = "") -> list | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+[extractor] Batch done. Extracted so far: 70
+[extractor] Extraction complete. Total: 70 articles.
+[extractor] Starting extraction for 70 articles...
+[extractor] Processing batch 1: articles 1-10
+[extractor] Unexpected error: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 117, in call_claude
+    response = client.messages.create(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_utils/_utils.py", line 282, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/resources/messages/messages.py", line 996, in create
+    return self._post(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1370, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1064, in request
+    request = self._build_request(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 521, in _build_request
+    headers = self._build_headers(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 451, in _build_headers
+    self._validate_headers(headers_dict, custom_headers)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_client.py", line 196, in _validate_headers
+    raise TypeError(
+TypeError: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[extractor] Batch extraction failed for 10 articles, using defaults
+[extractor] Batch done. Extracted so far: 10
+[extractor] Processing batch 2: articles 11-20
+[extractor] Unexpected error: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 117, in call_claude
+    response = client.messages.create(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_utils/_utils.py", line 282, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/resources/messages/messages.py", line 996, in create
+    return self._post(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1370, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1064, in request
+    request = self._build_request(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 521, in _build_request
+    headers = self._build_headers(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 451, in _build_headers
+    self._validate_headers(headers_dict, custom_headers)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_client.py", line 196, in _validate_headers
+    raise TypeError(
+TypeError: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[extractor] Batch extraction failed for 10 articles, using defaults
+[extractor] Batch done. Extracted so far: 20
+[extractor] Processing batch 3: articles 21-30
+[extractor] Unexpected error: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 117, in call_claude
+    response = client.messages.create(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_utils/_utils.py", line 282, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/resources/messages/messages.py", line 996, in create
+    return self._post(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1370, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1064, in request
+    request = self._build_request(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 521, in _build_request
+    headers = self._build_headers(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 451, in _build_headers
+    self._validate_headers(headers_dict, custom_headers)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_client.py", line 196, in _validate_headers
+    raise TypeError(
+TypeError: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[extractor] Batch extraction failed for 10 articles, using defaults
+[extractor] Batch done. Extracted so far: 30
+[extractor] Processing batch 4: articles 31-40
+[extractor] Unexpected error: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 117, in call_claude
+    response = client.messages.create(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_utils/_utils.py", line 282, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/resources/messages/messages.py", line 996, in create
+    return self._post(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1370, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1064, in request
+    request = self._build_request(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 521, in _build_request
+    headers = self._build_headers(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 451, in _build_headers
+    self._validate_headers(headers_dict, custom_headers)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_client.py", line 196, in _validate_headers
+    raise TypeError(
+TypeError: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[extractor] Batch extraction failed for 10 articles, using defaults
+[extractor] Batch done. Extracted so far: 40
+[extractor] Processing batch 5: articles 41-50
+[extractor] Unexpected error: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 117, in call_claude
+    response = client.messages.create(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_utils/_utils.py", line 282, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/resources/messages/messages.py", line 996, in create
+    return self._post(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1370, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1064, in request
+    request = self._build_request(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 521, in _build_request
+    headers = self._build_headers(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 451, in _build_headers
+    self._validate_headers(headers_dict, custom_headers)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_client.py", line 196, in _validate_headers
+    raise TypeError(
+TypeError: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[extractor] Batch extraction failed for 10 articles, using defaults
+[extractor] Batch done. Extracted so far: 50
+[extractor] Processing batch 6: articles 51-60
+[extractor] Unexpected error: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 117, in call_claude
+    response = client.messages.create(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_utils/_utils.py", line 282, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/resources/messages/messages.py", line 996, in create
+    return self._post(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1370, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1064, in request
+    request = self._build_request(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 521, in _build_request
+    headers = self._build_headers(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 451, in _build_headers
+    self._validate_headers(headers_dict, custom_headers)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_client.py", line 196, in _validate_headers
+    raise TypeError(
+TypeError: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[extractor] Batch extraction failed for 10 articles, using defaults
+[extractor] Batch done. Extracted so far: 60
+[extractor] Processing batch 7: articles 61-70
+[extractor] Unexpected error: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/pipeline/extractor.py", line 117, in call_claude
+    response = client.messages.create(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_utils/_utils.py", line 282, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/resources/messages/messages.py", line 996, in create
+    return self._post(
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1370, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 1064, in request
+    request = self._build_request(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 521, in _build_request
+    headers = self._build_headers(options, retries_taken=retries_taken)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_base_client.py", line 451, in _build_headers
+    self._validate_headers(headers_dict, custom_headers)
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/anthropic/_client.py", line 196, in _validate_headers
+    raise TypeError(
+TypeError: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+[extractor] Batch extraction failed for 10 articles, using defaults
+[extractor] Batch done. Extracted so far: 70
+[extractor] Extraction complete. Total: 70 articles.
+[extractor] Starting extraction for 70 articles...
+[extractor] Processing batch 1: articles 1-10
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[extractor] Batch done. Extracted so far: 10
+[extractor] Processing batch 2: articles 11-20
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[extractor] Batch done. Extracted so far: 20
+[extractor] Processing batch 3: articles 21-30
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[extractor] Batch done. Extracted so far: 30
+[extractor] Processing batch 4: articles 31-40
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[extractor] Batch done. Extracted so far: 40
+[extractor] Processing batch 5: articles 41-50
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[extractor] Batch done. Extracted so far: 50
+[extractor] Processing batch 6: articles 51-60
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[extractor] Batch done. Extracted so far: 60
+[extractor] Processing batch 7: articles 61-70
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[extractor] Batch done. Extracted so far: 70
+[extractor] Extraction complete. Total: 70 articles.
+[reporter] 开始生成 2026-04-06 报告
+[reporter] Step A: 共 70 条已提取新闻
+[reporter] Step B: 获取持仓
+HTTP Request: POST https://api.anthropic.com/v1/messages?beta=true "HTTP/1.1 400 Bad Request"
+fetch_portfolio: 调用失败 (BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': "mcp_servers.0.type: Input should be 'url'"}, 'request_id': 'req_011CZmzTguRspEV3sPqaML1c'})，使用 fallback []
+[reporter] Step B: 持仓条数 = 0
+[reporter] Step C: 调用 Claude 生成分析
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+generate_analysis: Claude 分析生成成功
+[reporter] Step D: 报告已创建，id=1
+[reporter] 开始生成 2026-04-06 报告
+[reporter] Step A: 共 70 条已提取新闻
+[reporter] Step B: 获取持仓
+fetch_portfolio: 成功获取 0 条持仓
+[reporter] Step B: 持仓条数 = 0
+[reporter] Step C: 调用 Claude 生成分析
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+generate_analysis: 失败 (JSONDecodeError: Expecting ',' delimiter: line 4 column 572 (char 791))，使用降级文本
+[reporter] Step D: 报告已更新，id=1
+[reporter] 开始生成 2026-04-06 报告
+[reporter] Step A: 共 70 条已提取新闻
+[reporter] Step B: 获取持仓
+fetch_portfolio: 成功获取 0 条持仓
+[reporter] Step B: 持仓条数 = 0
+[reporter] Step C: 调用 Claude 生成分析
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+generate_analysis: Claude 分析生成成功
+[reporter] Step D: 报告已更新，id=1
+Watching for file changes with StatReloader
+fetch_portfolio: 成功获取 0 条持仓
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+fetch_portfolio: 成功获取 0 条持仓
+fetch_portfolio: 成功获取 0 条持仓
+fetch_portfolio: 成功获取 0 条持仓
+Not Found: /favicon.ico
+Watching for file changes with StatReloader
+fetch_portfolio: 成功获取 0 条持仓
+fetch_portfolio: 成功获取 0 条持仓
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[chat] error: 'Settings' object has no attribute 'ALPACA_BASE_URL'
+Traceback (most recent call last):
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py", line 319, in chat
+    result = execute_tool(block.name, block.input)
+  File "/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py", line 108, in execute_tool
+    base = settings.ALPACA_BASE_URL  # https://paper-api.alpaca.markets
+  File "/Users/howyoulee/Library/Python/3.9/lib/python/site-packages/django/conf/__init__.py", line 104, in __getattr__
+    val = getattr(_wrapped, name)
+AttributeError: 'Settings' object has no attribute 'ALPACA_BASE_URL'
+Internal Server Error: /api/chat/
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/config/settings.py changed, reloading.
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/config/settings.py changed, reloading.
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+fetch_portfolio: 成功获取 0 条持仓
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+[reporter] 开始生成 2026-04-06 报告
+[reporter] Step A: 共 70 条已提取新闻
+[reporter] Step B: 获取持仓
+fetch_portfolio: 成功获取 0 条持仓
+[reporter] Step B: 持仓条数 = 0
+[reporter] Step C: 调用 Claude 生成分析
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+generate_analysis: 失败 (JSONDecodeError: Expecting ',' delimiter: line 4 column 615 (char 814))，使用降级文本
+[reporter] Step D: 报告已更新，id=1
+fetch_portfolio: 成功获取 0 条持仓
+[reporter] 开始生成 2026-04-06 报告
+[reporter] Step A: 共 70 条已提取新闻
+[reporter] Step B: 获取持仓
+fetch_portfolio: 成功获取 0 条持仓
+[reporter] Step B: 持仓条数 = 0
+[reporter] Step C: 调用 Claude 生成分析
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+generate_analysis: Claude 分析生成成功
+[reporter] Step D: 报告已更新，id=1
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+/Users/howyoulee/Daily AI Insight Engine/stock_insight_agent/apps/api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+fetch_portfolio: 成功获取 1 条持仓
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+fetch_portfolio: 成功获取 7 条持仓
+fetch_portfolio: 成功获取 7 条持仓
+[reporter] 开始生成 2026-04-06 报告
+[reporter] Step A: 共 70 条已提取新闻
+[reporter] Step B: 获取持仓
+fetch_portfolio: 成功获取 7 条持仓
+[reporter] Step B: 持仓条数 = 7
+[reporter] Step C: 调用 Claude 生成分析
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+generate_analysis: Claude 分析生成成功
+[reporter] Step D: 报告已更新，id=1
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+fetch_portfolio: 成功获取 7 条持仓
+fetch_portfolio: 成功获取 7 条持仓
+Not Found: /favicon.ico
+Not Found: /favicon.ico
