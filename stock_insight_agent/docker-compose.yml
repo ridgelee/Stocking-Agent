@@ -1,0 +1,72 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: stock_insight
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - appnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - DB_NAME=stock_insight
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_PORT=5432
+    volumes:
+      - ./logs:/app/logs
+      - ./apps:/app/apps
+    networks:
+      - appnet
+    depends_on:
+      db:
+        condition: service_healthy
+
+  pipeline:
+    build: .
+    entrypoint: []
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             while true; do
+               hour=$$(date +%H); min=$$(date +%M); dow=$$(date +%u);
+               if [ \"$$dow\" -le 5 ] && [ \"$$hour\" = '07' ] && [ \"$$min\" = '30' ]; then
+                 python manage.py run_pipeline;
+               fi;
+               sleep 60;
+             done"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - DB_NAME=stock_insight
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_PORT=5432
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - appnet
+    depends_on:
+      db:
+        condition: service_healthy
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  postgres_data:

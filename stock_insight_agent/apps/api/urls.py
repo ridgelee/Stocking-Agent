@@ -8,4 +8,5 @@ urlpatterns = [
     path('api/report/generate/', views.report_generate, name='report_generate'),
     path('api/report/latest/', views.report_latest, name='report_latest'),
     path('api/chat/', views.chat, name='chat'),
+    path('api/collect/', views.collect, name='collect'),
 ]

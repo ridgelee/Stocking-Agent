@@ -222,7 +222,9 @@ def news_list(request):
     sentiment = request.GET.get("sentiment")
     source_type = request.GET.get("source_type")
 
-    qs = NewsArticle.objects.all()
+    from django.utils import timezone as dj_tz
+    today = dj_tz.now().date()
+    qs = NewsArticle.objects.filter(fetched_at__date=today)
     if impact_level:
         qs = qs.filter(impact_level=impact_level)
     if sentiment:
@@ -265,6 +267,23 @@ def portfolio(request):
     except Exception as e:
         logger.exception("portfolio view error")
         return JsonResponse({"portfolio": [], "error": str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def collect(request):
+    try:
+        from apps.pipeline.collector import run as collect_run
+        from apps.pipeline.extractor import run as extract_run
+        collect_run(force=True)
+        extract_run()
+        from apps.pipeline.models import NewsArticle
+        from django.utils import timezone
+        count = NewsArticle.objects.filter(fetched_at__date=timezone.now().date()).count()
+        return JsonResponse({"status": "ok", "today_count": count})
+    except Exception as e:
+        logger.exception("collect error")
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 
 @csrf_exempt

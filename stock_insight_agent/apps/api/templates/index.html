@@ -122,6 +122,20 @@
   }
   .btn-generate:hover { background: #2563eb; }
   .btn-generate:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+  .btn-show-report {
+    padding: 9px 18px; background: #1e293b; color: var(--accent); border: 1.5px solid var(--accent);
+    border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s;
+    display: none;
+  }
+  .btn-show-report:hover { background: #1e3a5f; }
+  .collect-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+  .btn-collect {
+    padding: 7px 16px; background: #0f766e; color: #fff; border: none;
+    border-radius: 6px; font-size: 13px; cursor: pointer; transition: background .2s;
+  }
+  .btn-collect:hover { background: #0d9488; }
+  .btn-collect:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+  .collect-hint { font-size: 12px; color: var(--text-muted); }
   #report-status { color: var(--text-muted); font-size: 13px; }
 
   /* Area C: News */
@@ -397,12 +411,22 @@
       <div id="portfolio-content"><div class="spinner"></div></div>
     </div>
 
-    <!-- Area B: Report Button -->
+    <!-- Area B: Report Button + Collect Button -->
     <div class="area-report-btn">
       <button class="btn-generate" id="btn-generate" onclick="generateReport()">
         &#x1F4CA; 生成今日分析报告
       </button>
+      <button class="btn-show-report" id="btn-show-report" onclick="showCachedReport()">
+        &#x1F4C4; 显示报告
+      </button>
+      <div class="collect-row">
+        <button class="btn-collect" id="btn-collect" onclick="collectNews()">
+          &#x1F4E1; 手动触发新闻收集
+        </button>
+        <span class="collect-hint">工作日早上 07:30 会自动触发收集</span>
+      </div>
       <span id="report-status"></span>
+      <span id="collect-status" style="font-size:13px;color:var(--text-muted);"></span>
     </div>
 
     <!-- Area C: News -->
@@ -436,6 +460,7 @@
           </select>
         </div>
         <span class="news-count" id="news-count"></span>
+        <span id="news-last-update" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>
       </div>
       <div id="news-list"><div style="display:flex;justify-content:center;padding:30px"><div class="spinner"></div></div></div>
     </div>
@@ -548,11 +573,16 @@ async function loadPortfolio() {
 // ===== Area C: News =====
 async function loadNews() {
   try {
-    var res = await fetch('/api/news/?limit=200');
+    var res = await fetch('/api/news/?limit=20');
     var data = await res.json();
     // API returns "articles" key (views.py line 61)
     allArticles = data.articles || data.news || [];
     applyFilters();
+    var el = document.getElementById('news-last-update');
+    if (el) {
+      var now = new Date();
+      el.textContent = '最近更新：' + now.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+    }
   } catch (e) {
     document.getElementById('news-list').innerHTML = '<div style="color:var(--text-muted);padding:20px">新闻加载失败</div>';
   }
@@ -613,6 +643,58 @@ function renderNews(articles) {
   }).join('');
 }
 
+// ===== Collect News =====
+async function collectNews() {
+  var btn = document.getElementById('btn-collect');
+  var status = document.getElementById('collect-status');
+  btn.disabled = true;
+  btn.innerHTML = '&#x23F3; 采集中...';
+  status.textContent = '正在采集新闻并提取结构化信息，请稍候...';
+  try {
+    var res = await fetch('/api/collect/', { method: 'POST' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message || '采集失败');
+    await loadNews();
+    status.textContent = '✓ 采集完成';
+    setTimeout(function() { status.textContent = ''; }, 3000);
+  } catch (e) {
+    status.textContent = '✗ 采集失败：' + e.message;
+    setTimeout(function() { status.textContent = ''; }, 6000);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#x1F4E1; 手动触发新闻收集';
+  }
+}
+
+// ===== Cached report =====
+var cachedReport = null;
+
+function _setCachedReport(report) {
+  cachedReport = report;
+  var showBtn = document.getElementById('btn-show-report');
+  if (showBtn) showBtn.style.display = 'inline-block';
+}
+
+function showCachedReport() {
+  if (cachedReport) showReportModal(cachedReport);
+}
+
+// Try loading existing report on page load
+(async function() {
+  try {
+    var rep = await fetch('/api/report/latest/');
+    var report = await rep.json();
+    if (!report.error && report.report_date) {
+      _setCachedReport(report);
+      var genBtn = document.getElementById('btn-generate');
+      if (genBtn) {
+        genBtn.innerHTML = '&#x1F504; 重新生成报告';
+      }
+    }
+  } catch (e) { /* no report yet, leave button as-is */ }
+})();
+
 // ===== Area B: Generate Report =====
 async function generateReport() {
   var btn = document.getElementById('btn-generate');
@@ -628,14 +710,15 @@ async function generateReport() {
     var rep = await fetch('/api/report/latest/');
     var report = await rep.json();
     if (report.error) throw new Error(report.error);
+    _setCachedReport(report);
     showReportModal(report);
+    btn.innerHTML = '&#x1F504; 重新生成报告';
     status.textContent = '';
   } catch (e) {
     alert('报告生成失败：' + e.message);
     status.textContent = '';
   } finally {
     btn.disabled = false;
-    btn.textContent = '&#x1F4CA; 生成今日分析报告';
   }
 }
 
@@ -693,15 +776,17 @@ function showReportModal(report) {
   });
 
   // Top tickers horizontal bar
-  var topTickers = report.top_tickers || {};
-  var tkEntries = Object.entries(topTickers).sort(function(a,b){return b[1]-a[1];}).slice(0, 8);
+  var topTickersRaw = report.top_tickers || [];
+  var tkEntries = Array.isArray(topTickersRaw)
+    ? topTickersRaw.slice(0, 8)
+    : Object.entries(topTickersRaw).map(function(e){return {ticker:e[0],count:e[1]};}).slice(0,8);
   var tkCtx = document.getElementById('chart-tickers').getContext('2d');
   chartInstances.tickers = new Chart(tkCtx, {
     type: 'bar',
     data: {
-      labels: tkEntries.map(function(e){return e[0];}),
+      labels: tkEntries.map(function(e){return e.ticker;}),
       datasets: [{
-        data: tkEntries.map(function(e){return e[1];}),
+        data: tkEntries.map(function(e){return e.count;}),
         backgroundColor: '#8b5cf6',
         borderRadius: 4,
       }]
@@ -716,20 +801,34 @@ function showReportModal(report) {
     }
   });
 
-  // Analysis text
+  // Analysis text (5 sections)
   var analysis = report.analysis_text || {};
+  var meta = report.generation_meta || {};
   var html = '';
-  if (analysis.market_trend) {
-    html += '<div class="analysis-section"><h3>今日市场趋势</h3><p>' + analysis.market_trend + '</p></div>';
+  if (meta.reflection_score) {
+    html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">'
+      + '生成方式：Planner → Executor → Reflection（评分 ' + meta.reflection_score + '/10）→ Replan → Final'
+      + '</div>';
   }
-  if (analysis.event_summary) {
-    html += '<div class="analysis-section"><h3>重要事件深度总结</h3><p>' + analysis.event_summary + '</p></div>';
+  var sections = [
+    { key: 'ai_hotspots',      title: '今日 AI 领域主要热点' },
+    { key: 'event_analysis',   title: '重要事件深度总结' },
+    { key: 'trend_insights',   title: '趋势判断' },
+    { key: 'risk_opportunity', title: '风险或机会提示' },
+    { key: 'portfolio_insight',title: '持仓参考' },
+  ];
+  sections.forEach(function(s) {
+    if (analysis[s.key]) {
+      html += '<div class="analysis-section"><h3>' + s.title + '</h3><p>' + analysis[s.key] + '</p></div>';
+    }
+  });
+  // Fallback for old 3-section reports
+  if (!html || (!analysis.ai_hotspots && analysis.market_trend)) {
+    if (analysis.market_trend) html += '<div class="analysis-section"><h3>今日市场趋势</h3><p>' + analysis.market_trend + '</p></div>';
+    if (analysis.event_summary) html += '<div class="analysis-section"><h3>重要事件深度总结</h3><p>' + analysis.event_summary + '</p></div>';
+    if (analysis.portfolio_insight) html += '<div class="analysis-section"><h3>持仓参考</h3><p>' + analysis.portfolio_insight + '</p></div>';
   }
-  if (analysis.portfolio_insight) {
-    html += '<div class="analysis-section"><h3>持仓相关投资参考</h3><p>' + analysis.portfolio_insight + '</p>'
-      + '<p class="disclaimer">免责声明：以上内容仅供参考，不构成投资建议。投资有风险，决策须谨慎。</p></div>';
-  }
-  document.getElementById('modal-analysis').innerHTML = html;
+  document.getElementById('modal-analysis').innerHTML = html || '<p style="color:var(--text-muted)">暂无分析内容</p>';
 
   document.getElementById('report-modal').classList.add('open');
 }
