@@ -1,0 +1,255 @@
+---
+## VibeCoding 开发记录 — Step 1: Django 初始化 + PostgreSQL + 数据模型
+**时间**: 2026-04-05
+
+### 1. 哪些步骤使用了 AI？
+- Django 项目脚手架生成（django-admin startproject）
+- settings.py 配置生成（DB、日志、CORS、API Keys）
+- apps/pipeline/models.py 数据模型代码生成
+- 迁移命令执行与错误排查
+
+### 2. Prompt 设计思路
+**关键 Prompt 片段**:
+```
+Create apps/pipeline/models.py with NewsArticle and DailyReport models exactly as PRD Section 4.
+NewsArticle must include: related_tickers (JSONField), event_type, sentiment, impact_level,
+one_line_summary, key_entities (JSONField), is_extracted (BooleanField default=False).
+Add DB indexes on published_at, impact_level, sentiment, source_type, is_extracted.
+```
+**设计原因**:
+- 严格对照 PRD Section 4 字段定义，避免后续提取层字段不匹配
+- 提前建 5 个索引，为后续 API 过滤查询（按 sentiment/impact_level）提前优化
+
+### 3. AI 输出错误处理
+- **遇到的问题**: PostgreSQL 未启动、pip 命令路径问题（需用 pip3）、apps 目录冲突
+- **处理方式**: 逐一排查，启动 Postgres.app，改用 pip3，删除冲突的 __init__.py 后重新 startapp
+- **人工介入边界**: 数据库密码配置需人工确认（最终 postgres 用户无密码）
+
+### 4. 成本与效率考量
+- **本步骤 Claude API 调用次数**: 0 次（Step 1 不调用 Claude API，纯代码生成）
+- **预估 Token 消耗**: 本步骤仅用于代码生成，由 Claude Code 消耗，不计入业务 API
+- **优化空间**: settings.py 可拆分 base/local/prod 三文件，MVP 阶段单文件足够
+
+---
+## VibeCoding 开发记录 — Step 2: 数据采集层（collector.py）
+**时间**: 2026-04-05
+
+### 1. 哪些步骤使用了 AI？
+- collector.py 三个采集函数代码生成
+- Yahoo Finance RSS 解析逻辑（替代 Reddit PRAW）
+- 幂等逻辑（get_or_create）和 run() 主入口设计
+
+### 2. Prompt 设计思路
+**关键设计**:
+```
+Reddit 替换方案：Yahoo Finance RSS（无需 API Key）
+YAHOO_RSS_FEEDS = [
+    "feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL,MSFT,NVDA,TSLA,AMZN...",
+    "feeds.finance.yahoo.com/rss/2.0/headline?s=SPY,QQQ,META,GOOGL,NFLX...",
+    "finance.yahoo.com/news/rssindex",
+]
+幂等：url 为唯一键，get_or_create；今日 >= 20 条则跳过
+```
+**设计原因**:
+- Reddit API 需要 OAuth 配置且有速率限制，Yahoo Finance RSS 免费无需认证
+- get_or_create 保证重复运行不插入重复数据
+- 三板块串行执行，任一失败 try-catch 记录日志不中断
+
+### 3. AI 输出错误处理
+- **遇到的问题**: NewsAPI `from` 参数因本机系统时钟显示 2026 年导致返回空结果
+- **处理方式**: 移除 `from` 参数限制，直接取最新 10 条
+- **人工介入边界**: API Key 有效性需人工提供；NewsAPI 免费版每日 100 次请求上限需人工监控
+
+### 4. 成本与效率考量
+- **本步骤 Claude API 调用次数**: 0 次（采集层不调用 Claude）
+- **实际采集结果**: tech_media 10 条 / financial_news 50 条 / social_media 10 条 = 共 70 条
+- **优化空间**: 三个采集函数可改为并发（asyncio 或 ThreadPoolExecutor），当前串行约 10-15s
+
+---
+## VibeCoding 开发记录 — Step 3: 结构化提取层（extractor.py）
+**时间**: 2026-04-05
+
+### 1. 哪些步骤使用了 AI？
+- extractor.py 完整实现（Claude API 调用、批量处理、错误处理）
+- SYSTEM_PROMPT 设计（6 字段的枚举约束、JSON-only 输出）
+- 重试逻辑与 default_extraction() 降级策略
+
+### 2. Prompt 设计思路
+**关键 System Prompt 片段**:
+```
+You are a financial news analyst specializing in equity markets.
+STRICT RULES:
+- Respond with a valid JSON array ONLY. No markdown, no explanation, no code fences.
+- sentiment: Judge by likely stock PRICE impact, NOT article tone.
+  Example: "Regulator investigates Apple" → Bearish (even if tone is neutral)
+- impact_level: High = likely >2% price move
+- one_line_summary: explain MARKET IMPLICATIONS not just facts.
+  Bad: "This may impact markets."
+  Good: "NVIDIA Q4 revenue beat by 20%, driven by H100 demand; likely to push AI infra spending higher."
+```
+**设计原因**:
+- JSON-only 输出：避免 Claude 输出 markdown 代码块导致 json.loads 失败
+- sentiment 基于价格影响而非语气：这是结构化抽取的核心价值，区别于关键词情感分析
+- 反例示范（Bad/Good）：显著减少空洞描述的概率，引导 Claude 给出有数据支撑的摘要
+- 批量 10 条/次：平衡 API 调用次数与 context window 大小
+
+### 3. AI 输出错误处理
+- **遇到的问题 1**: Python 3.9 不支持 `list | None` 类型注解语法（需 3.10+）→ 改为 `Optional[list]`
+- **遇到的问题 2**: 系统环境变量 `ANTHROPIC_API_KEY=""` 覆盖了 .env 文件中的值 → `load_dotenv(..., override=True)`
+- **处理方式**: JSONDecodeError → 加强语气重试一次 → 失败则 default_extraction() 填充默认值并记录日志
+- **人工介入边界**: 若超过 20% 的文章使用默认值（summary = "[Extraction failed]"），需人工检查 API Key 和网络
+
+### 4. 成本与效率考量
+- **本步骤 Claude API 调用次数**: 7 次（70 条文章 ÷ 10 条/批）
+- **预估 Token 消耗**:
+  - 每批 input：system prompt (~300 tokens) + 10 篇文章 (~800 tokens/篇 × 10) = ~8300 tokens
+  - 每批 output：10 个 JSON 对象 ≈ ~500 tokens
+  - 7 批合计：约 61,600 input + 3,500 output = **~65,100 tokens**
+- **优化空间**:
+  - content 截断为 800 字符已有效控制 token 消耗
+  - 可对 financial_news（Alpha Vantage 已含 ticker 信息）跳过 related_tickers 提取
+  - 可缓存已提取结果，重复运行时跳过 is_extracted=True 的记录（已实现）
+
+---
+## VibeCoding 开发记录 — Step 4: 报告生成层（reporter.py）
+**时间**: 2026-04-06
+
+### 1. 哪些步骤使用了 AI？
+- reporter.py 完整实现（subagent 生成代码框架）
+- generate_analysis() 的 System Prompt 设计
+- Claude API 1次调用生成三章节分析文本
+
+### 2. Prompt 设计思路
+**关键 System Prompt 片段**:
+```
+REQUIREMENT: Must include specific data/numbers.
+FORBIDDEN: Vague statements like "影响较大" or "值得关注" without data support.
+MANDATORY LAST LINE: ⚠️ 以上内容仅供参考，不构成投资建议。
+Return the three sections as a JSON object with keys: market_trend, event_summary, portfolio_insight
+JSON only, no markdown fences.
+```
+**设计原因**:
+- 明确禁止空洞表述，强制数据支撑：避免 Claude 输出"可能影响市场"等无效内容
+- JSON only 输出：方便前端直接消费三个章节，免责声明强制写入 portfolio_insight
+- 用户数据（情绪分布、事件分类、top tickers、highlights）作为 context 输入，确保分析基于真实数据
+
+### 3. AI 输出错误处理
+- **遇到的问题 1**: Anthropic SDK mcp_servers 不支持 stdio 模式 → 改为直接调用 Alpaca REST API /v2/positions
+- **遇到的问题 2**: Claude 返回 JSON 含特殊字符导致 json.loads 失败 → 增加 brace matching fallback 解析
+- **处理方式**: 双重解析策略（直接 parse → brace matching）；generate_analysis 失败时返回降级文本，报告仍正常保存
+- **人工介入边界**: market_trend 出现"AI 分析暂不可用"字样时需检查 ANTHROPIC_API_KEY
+
+### 4. 成本与效率考量
+- **本步骤 Claude API 调用次数**: 1 次（整个报告只调用 1 次，符合 PRD 要求）
+- **预估 Token 消耗**:
+  - input：system prompt (~400 tokens) + 统计数据 + 5条 highlights (~800 tokens) = ~1,200 tokens
+  - output：三章节分析文本 ~800 tokens
+  - 合计：~2,000 tokens/次报告生成
+- **优化空间**: highlights 内容可截断控制 token；报告已用 update_or_create 避免重复生成
+
+---
+## VibeCoding 开发记录 — Step 5: Django API Views（6个endpoint）
+**时间**: 2026-04-06
+
+### 1. 哪些步骤使用了 AI？
+- views.py / urls.py / run_pipeline.py 代码生成（subagent）
+- news_list 过滤逻辑与 impact_level 排序权重设计
+
+### 2. Prompt 设计思路
+本步骤无业务层 Claude API 调用，AI 仅用于代码生成。
+关键设计决策：
+- impact_level 排序：High > Medium > Low，用 Case/When 或手动排序权重实现
+- /api/report/generate/ 同步调用 reporter.run()（MVP 阶段，无需异步队列）
+- /api/chat/ 暂时返回 mock，Step 7 替换实现
+
+### 3. AI 输出错误处理
+- **遇到的问题**: 无重大错误，三个 endpoint 一次验收通过
+- **人工介入边界**: 若 /api/report/generate/ 超时（Claude API 慢），需考虑异步任务队列
+
+### 4. 成本与效率考量
+- **本步骤 Claude API 调用次数**: 0 次（纯 Django 代码，无业务 AI 调用）
+- **优化空间**: news_list 可加分页（cursor-based）；report/generate 可改为 Celery 异步任务
+
+---
+## VibeCoding 开发记录 — Step 6: 前端页面（index.html）
+**时间**: 2026-04-06
+
+### 1. 哪些步骤使用了 AI？
+- index.html 完整实现（subagent 代码生成）
+- 四区域布局、Chart.js 图表配置、Chat UI 交互逻辑
+
+### 2. Prompt 设计思路
+本步骤无业务层 Claude API 调用，AI 仅用于代码生成。
+关键设计决策：
+- 单文件内嵌所有 CSS + JS（PRD 要求）
+- 前端 JS 过滤：三维筛选（情绪/影响/板块），不重新请求后端
+- Chart.js CDN：Doughnut（情绪）+ 横向Bar（事件类型）+ 横向Bar（top tickers）
+- 深色主题：#0f172a 背景，与数据仪表盘风格一致
+
+### 3. AI 输出错误处理
+- **遇到的问题**: views.py 返回 key 为 "articles" 而非 "news"，前端 JS 需对齐字段名
+- **处理方式**: 前端使用 data.articles 读取，并兜底 data.news
+- **人工介入边界**: Chart.js 图表若数据为空需前端处理（已加 fallback 展示空状态）
+
+### 4. 成本与效率考量
+- **本步骤 Claude API 调用次数**: 0 次（纯前端 HTML/CSS/JS，无业务 AI 调用）
+- **文件大小**: 825 行，内嵌所有依赖（除 Chart.js CDN）
+- **优化空间**: 可拆分为 JS/CSS 独立文件 + Django staticfiles；MVP 阶段单文件足够
+
+---
+## VibeCoding 开发记录 — Step 7: Chat Agent（Claude + Alpaca MCP）
+**时间**: 2026-04-06
+
+### 1. 哪些步骤使用了 AI？
+- chat view 完整实现（subagent 代码生成）
+- CHAT_SYSTEM_PROMPT 设计（安全规则、确认流程、语言设定）
+- Claude tool_use agentic loop 设计（最多5轮工具调用）
+
+### 2. Prompt 设计思路
+**关键 System Prompt 片段**:
+```
+STRICT SAFETY RULES:
+1. ALWAYS confirm before executing ANY trade. Set requires_confirmation=true.
+   Confirmation format: "确认下单信息：操作/股票/数量/类型"
+2. Execute trade ONLY when user's message is exactly "确认"/"是"/"yes"/"confirm"
+3. This is PAPER TRADING — always mention this if user asks about real money
+4. You are an EXECUTION assistant, NOT a financial advisor
+   NEVER suggest which stocks to buy or predict prices
+```
+**设计原因**:
+- 两步确认流程：防止误操作，Claude 返回确认卡片 → 用户回复「确认」→ 才执行下单
+- requires_confirmation 字段：前端可据此高亮确认按钮，提升 UX
+- NEVER 建议买哪只股票：避免法律风险，严守执行助手定位
+- 最多5轮 tool_use 循环：防止无限循环，有明确上限
+
+### 3. AI 输出错误处理
+- **遇到的问题**: settings.py 缺少 ALPACA_BASE_URL → 已补充
+- **Anthropic SDK mcp_servers 不支持 stdio** → 改为 Claude tools 定义 + 直接调用 Alpaca REST API
+- **人工介入边界**: place_order / close_position 执行失败（如市场休市）会返回工具错误字符串，Claude 会将错误转述给用户
+
+### 4. 成本与效率考量
+- **本步骤 Claude API 调用次数**: 每次对话 1-2 次（查询类1次，交易类2次：1次查价+1次下单确认）
+- **预估 Token 消耗**: 
+  - 查询类：~500 input + ~200 output = ~700 tokens/次对话
+  - 交易类：~600 input + ~300 output × 2轮 = ~1,800 tokens/次对话
+- **优化空间**: history 限制最近10轮，避免 context 过长；tool 结果字符串已控制长度
+
+---
+## VibeCoding 开发记录 — Step 8: cron job 配置
+**时间**: 2026-04-06
+
+### 1. 哪些步骤使用了 AI？
+- 本步骤无 Claude API 业务调用
+- subagent 用于生成 cron 配置命令并验收
+
+### 2. Prompt 设计思路
+无业务 AI 调用，不涉及 prompt 设计。
+
+### 3. AI 输出错误处理
+- **遇到的问题**: 无
+- **人工介入边界**: 若 cron 未按时触发，检查系统时区是否为 America/New_York
+
+### 4. 成本与效率考量
+- **本步骤 Claude API 调用次数**: 0 次
+- **cron 规则**: `30 7 * * 1-5`（工作日早 7:30 AM）
+- **注意**: pipeline 只运行 collect + extract，不自动生成报告（按需由用户点击触发）
