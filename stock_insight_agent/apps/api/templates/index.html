@@ -243,6 +243,23 @@
   .msg { max-width: 85%; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; word-wrap: break-word; }
   .msg-user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 2px; }
   .msg-ai { align-self: flex-start; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+  .msg-ai b { font-weight: 600; color: var(--text); }
+  .chat-table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 6px 0; }
+  .chat-table th, .chat-table td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; white-space: nowrap; }
+  .chat-table th { background: #1e293b; font-weight: 600; color: var(--text-muted); }
+  .chat-table tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+  /* Chart card inside chat */
+  .chart-card { width: 100%; margin-bottom: 6px; }
+  .chart-stats { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .chart-symbol { font-size: 15px; font-weight: 700; color: var(--text); }
+  .chart-period { font-size: 11px; color: var(--text-muted); }
+  .chart-change { font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 12px; }
+  .chart-change.up { background: rgba(34,197,94,.18); color: var(--bullish); }
+  .chart-change.down { background: rgba(239,68,68,.18); color: var(--bearish); }
+  .chart-prices { display: flex; gap: 14px; margin-left: auto; font-size: 11px; color: var(--text-muted); }
+  .chart-prices span b { color: var(--text); font-weight: 600; }
+  .chart-canvas-wrap { position: relative; width: 100%; height: 160px; }
+  .chart-reply { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
   .msg-loading { align-self: flex-start; }
   .dots span {
     display: inline-block;
@@ -474,7 +491,6 @@
     </div>
     <div class="chat-shortcuts">
       <button class="shortcut-btn" onclick="sendShortcut('查看我的仓位')">查看我的仓位</button>
-      <button class="shortcut-btn" onclick="sendShortcut('今日高影响事件')">今日高影响事件</button>
     </div>
     <div class="chat-input-area">
       <textarea id="chat-input" placeholder="输入消息... (Enter 发送，Shift+Enter 换行)" rows="1"></textarea>
@@ -514,7 +530,9 @@
 // ===== State =====
 var allArticles = [];
 var chatHistory = [];
+var chatMessages = []; // [{role, text}] — persisted display list
 var chartInstances = {};
+var CHAT_STORAGE_KEY = 'ai_insight_chat_v1';
 
 // ===== Utilities =====
 function formatDate(iso) {
@@ -647,23 +665,56 @@ function renderNews(articles) {
 async function collectNews() {
   var btn = document.getElementById('btn-collect');
   var status = document.getElementById('collect-status');
+  var newsList = document.getElementById('news-list');
+
   btn.disabled = true;
   btn.innerHTML = '&#x23F3; 采集中...';
-  status.textContent = '正在采集新闻并提取结构化信息，请稍候...';
+
+  // Immediately clear news list and show spinner
+  newsList.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;padding:40px;gap:12px">'
+    + '<div class="spinner"></div>'
+    + '<div style="color:var(--text-muted);font-size:13px">正在后台抓取新闻，每 3 秒自动刷新...</div>'
+    + '</div>';
+  document.getElementById('news-count').textContent = '';
+  status.textContent = '⏳ 正在启动采集任务...';
+
+  // Scroll news area into view so user can see the spinner
+  newsList.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
   try {
     var res = await fetch('/api/collect/', { method: 'POST' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     var data = await res.json();
     if (data.status !== 'ok') throw new Error(data.message || '采集失败');
-    await loadNews();
-    status.textContent = '✓ 采集完成';
-    setTimeout(function() { status.textContent = ''; }, 3000);
+
+    status.textContent = '⏳ 后台采集中，自动刷新新闻列表...';
+
+    // Poll every 3 seconds for up to 90 seconds
+    var pollCount = 0;
+    var maxPolls = 30;
+    var prevCount = 0;
+
+    var pollTimer = setInterval(async function() {
+      pollCount++;
+      await loadNews();
+      var cur = allArticles.length;
+      status.textContent = '⏳ 采集中... 当前 ' + cur + ' 条（每 3 秒刷新）';
+
+      if (pollCount >= maxPolls) {
+        clearInterval(pollTimer);
+        btn.disabled = false;
+        btn.innerHTML = '&#x1F4E1; 手动触发新闻收集';
+        status.textContent = '✓ 采集完成，共 ' + cur + ' 条新闻';
+        setTimeout(function() { status.textContent = ''; }, 5000);
+      }
+    }, 3000);
+
   } catch (e) {
     status.textContent = '✗ 采集失败：' + e.message;
-    setTimeout(function() { status.textContent = ''; }, 6000);
-  } finally {
+    newsList.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">采集失败，请重试</div>';
     btn.disabled = false;
     btn.innerHTML = '&#x1F4E1; 手动触发新闻收集';
+    setTimeout(function() { status.textContent = ''; }, 6000);
   }
 }
 
@@ -872,8 +923,15 @@ async function sendChat() {
     var data = await res.json();
     loadingEl.remove();
     var reply = data.reply || '（无回复）';
-    appendMessage('ai', reply);
+    if (data.chart_data) {
+      appendChartMessage(reply, data.chart_data);
+    } else {
+      appendMessage('ai', reply);
+    }
     chatHistory.push({ role: 'assistant', content: reply });
+    _saveChatToStorage();
+    // Silently refresh portfolio after every AI reply (picks up trades immediately)
+    loadPortfolio();
   } catch (e) {
     loadingEl.remove();
     appendMessage('ai', '请求失败，请稍后重试。');
@@ -882,14 +940,209 @@ async function sendChat() {
   }
 }
 
-function appendMessage(role, text) {
+// ===== Markdown render helpers =====
+function _esc(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function _stripMd(text) {
+  var t = _esc(text);
+  t = t.replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>');   // headers → bold
+  t = t.replace(/\*\*(.+?)\*\*/g, '$1');              // **bold** → plain
+  t = t.replace(/\*(.+?)\*/g, '$1');                  // *italic* → plain
+  t = t.replace(/`([^`]+)`/g, '$1');                  // `code` → plain
+  t = t.replace(/~~(.+?)~~/g, '$1');                  // ~~strike~~ → plain
+  t = t.replace(/^[ \t]*[-*+]\s+/gm, '• ');          // unordered list
+  t = t.replace(/\[(.+?)\]\(.*?\)/g, '$1');           // [link](url) → text
+  t = t.replace(/\n{3,}/g, '\n\n');
+  return t.trim().replace(/\n/g, '<br>');
+}
+
+function _buildTable(lines) {
+  var rows = lines.filter(function(l) { return !/^\s*[\|\s\-:]+\s*$/.test(l); });
+  if (!rows.length) return '';
+  var html = '<table class="chat-table">';
+  rows.forEach(function(line, i) {
+    var cells = line.split('|');
+    // remove first/last empty parts from leading/trailing |
+    if (cells[0].trim() === '') cells.shift();
+    if (cells[cells.length - 1].trim() === '') cells.pop();
+    var tag = i === 0 ? 'th' : 'td';
+    html += '<tr>' + cells.map(function(c) {
+      return '<' + tag + '>' + _esc(c.trim()).replace(/\*\*(.+?)\*\*/g,'$1').replace(/\*(.+?)\*/g,'$1') + '</' + tag + '>';
+    }).join('') + '</tr>';
+  });
+  html += '</table>';
+  return html;
+}
+
+function renderReply(text) {
+  // Split into lines and detect table blocks
+  var lines = text.split('\n');
+  var html = '';
+  var tableLines = [];
+  var textLines = [];
+
+  function flushText() {
+    if (!textLines.length) return;
+    var t = _stripMd(textLines.join('\n')).trim();
+    if (t) html += '<span>' + t + '</span>';
+    textLines = [];
+  }
+  function flushTable() {
+    if (!tableLines.length) return;
+    html += _buildTable(tableLines);
+    tableLines = [];
+  }
+
+  lines.forEach(function(line) {
+    if (/^\s*\|/.test(line)) {
+      flushText();
+      tableLines.push(line);
+    } else {
+      flushTable();
+      textLines.push(line);
+    }
+  });
+  flushTable();
+  flushText();
+  return html || _esc(text);
+}
+
+function appendMessage(role, text, skipSave) {
   var container = document.getElementById('chat-messages');
   var div = document.createElement('div');
   div.className = 'msg ' + (role === 'user' ? 'msg-user' : 'msg-ai');
-  div.textContent = text;
+  if (role === 'ai') {
+    div.innerHTML = renderReply(text);
+  } else {
+    div.textContent = text;
+  }
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+  if (!skipSave) {
+    chatMessages.push({ role: role, text: text });
+    _saveChatToStorage();
+  }
   return div;
+}
+
+function appendChartMessage(reply, cd) {
+  var container = document.getElementById('chat-messages');
+  var div = document.createElement('div');
+  div.className = 'msg msg-ai';
+  div.style.maxWidth = '95%';
+
+  var isUp = cd.change_pct >= 0;
+  var first = cd.closes[0], last = cd.closes[cd.closes.length - 1];
+  var changeClass = isUp ? 'up' : 'down';
+  var changeSign = isUp ? '+' : '';
+  var canvasId = 'chart-' + Date.now();
+
+  div.innerHTML =
+    '<div class="chart-card">' +
+      '<div class="chart-stats">' +
+        '<span class="chart-symbol">' + _esc(cd.symbol) + '</span>' +
+        '<span class="chart-period">近 ' + cd.days + ' 天</span>' +
+        '<span class="chart-change ' + changeClass + '">' + changeSign + cd.change_pct + '%</span>' +
+        '<div class="chart-prices">' +
+          '<span>开：<b>$' + Number(first).toLocaleString(undefined, {maximumFractionDigits: 4}) + '</b></span>' +
+          '<span>收：<b>$' + Number(last).toLocaleString(undefined, {maximumFractionDigits: 4}) + '</b></span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="chart-canvas-wrap"><canvas id="' + canvasId + '"></canvas></div>' +
+    '</div>' +
+    '<div class="chart-reply">' + renderReply(reply) + '</div>';
+
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+
+  // Draw chart after DOM insert
+  var ctx = document.getElementById(canvasId).getContext('2d');
+  var color = isUp ? '#22c55e' : '#ef4444';
+  var gradient = ctx.createLinearGradient(0, 0, 0, 160);
+  gradient.addColorStop(0, isUp ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: cd.labels,
+      datasets: [{
+        data: cd.closes,
+        borderColor: color,
+        borderWidth: 2,
+        pointRadius: cd.closes.length > 60 ? 0 : 2,
+        pointHoverRadius: 4,
+        fill: true,
+        backgroundColor: gradient,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#e2e8f0',
+          callbacks: {
+            label: function(ctx) { return ' $' + Number(ctx.parsed.y).toLocaleString(undefined, {maximumFractionDigits: 4}); }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: '#94a3b8', font: { size: 10 },
+            maxTicksLimit: 6,
+            maxRotation: 0,
+          },
+          grid: { color: 'rgba(255,255,255,0.05)' },
+        },
+        y: {
+          position: 'right',
+          ticks: { color: '#94a3b8', font: { size: 10 } },
+          grid: { color: 'rgba(255,255,255,0.05)' },
+        }
+      }
+    }
+  });
+
+  chatMessages.push({ role: 'ai', text: reply });
+  _saveChatToStorage();
+  return div;
+}
+
+// ===== Chat persistence =====
+function _saveChatToStorage() {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
+      history: chatHistory,
+      messages: chatMessages
+    }));
+  } catch(e) {}
+}
+
+function _restoreChatFromStorage() {
+  try {
+    var raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return;
+    var data = JSON.parse(raw);
+    if (data.history && data.history.length) chatHistory = data.history;
+    if (data.messages && data.messages.length) {
+      document.getElementById('chat-messages').innerHTML = '';
+      chatMessages = [];
+      data.messages.forEach(function(m) { appendMessage(m.role, m.text, true); });
+      // sync chatMessages array after restore
+      chatMessages = data.messages.slice();
+    }
+  } catch(e) {}
 }
 
 function appendLoading() {
@@ -917,8 +1170,11 @@ document.getElementById('chat-input').addEventListener('input', function() {
 });
 
 // ===== Init =====
+_restoreChatFromStorage();
 loadPortfolio();
 loadNews();
+// Refresh portfolio silently every 30 seconds
+setInterval(loadPortfolio, 30000);
 </script>
 </body>
 </html>

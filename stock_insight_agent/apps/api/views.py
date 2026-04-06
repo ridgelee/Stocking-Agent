@@ -101,6 +101,18 @@ TOOLS = [
             },
             "required": ["symbol"]
         }
+    },
+    {
+        "name": "get_price_chart",
+        "description": "Get historical daily price data for a stock or crypto to display as a chart. Use when user asks about price trend, chart, or historical prices over N days.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol, e.g. NVDA or BTCUSD"},
+                "days": {"type": "integer", "description": "Number of days of history, e.g. 7, 30, 90"}
+            },
+            "required": ["symbol", "days"]
+        }
     }
 ]
 
@@ -201,6 +213,72 @@ def execute_tool(tool_name: str, tool_input: dict) -> str:
             r.raise_for_status()
             return f"✅ 已平仓 {symbol} 全部持仓。"
 
+        elif tool_name == "get_price_chart":
+            import json as _json
+            from datetime import timedelta as _td
+            symbol = tool_input["symbol"].upper().replace("/", "")
+            days = max(3, min(int(tool_input.get("days", 30)), 365))
+            crypto_bases = {"BTC","ETH","SOL","DOGE","AVAX","LTC","BCH","LINK","UNI","AAVE"}
+            is_crypto = any(symbol.startswith(c) for c in crypto_bases)
+
+            # Use explicit date range: go back extra days to account for weekends/holidays
+            end_dt = date.today()
+            start_dt = end_dt - _td(days=days + 10)
+            start_str = start_dt.isoformat()
+            end_str = end_dt.isoformat()
+
+            if is_crypto:
+                ticker_base = next(c for c in sorted(crypto_bases, key=len, reverse=True) if symbol.startswith(c))
+                api_symbol = f"{ticker_base}/USD"
+                url = (f"https://data.alpaca.markets/v1beta3/crypto/us/bars"
+                       f"?symbols={api_symbol}&timeframe=1Day&start={start_str}&end={end_str}&sort=asc&limit={days+10}")
+                r = req.get(url, headers=headers, timeout=15)
+                r.raise_for_status()
+                bars = (r.json().get("bars") or {}).get(api_symbol) or []
+            else:
+                # Use Alpha Vantage for stocks (Alpaca free plan lacks historical bars)
+                av_key = settings.ALPHAVANTAGE_KEY
+                outputsize = "full" if days > 100 else "compact"
+                av_url = (f"https://www.alphavantage.co/query"
+                          f"?function=TIME_SERIES_DAILY&symbol={symbol}"
+                          f"&outputsize={outputsize}&apikey={av_key}")
+                r = req.get(av_url, timeout=15)
+                r.raise_for_status()
+                ts = r.json().get("Time Series (Daily)") or {}
+                # ts is dict keyed by date string descending
+                sorted_dates = sorted(ts.keys())[-days:]
+                bars = [{"t": d, "c": ts[d]["4. close"], "h": ts[d]["2. high"], "l": ts[d]["3. low"]} for d in sorted_dates]
+
+            # Trim to requested days
+            if len(bars) > days:
+                bars = bars[-days:]
+
+            if not bars:
+                logger.warning(f"[get_price_chart] No bars for {symbol}. Response: {r.text[:300]}")
+                return f"未能获取 {symbol} 的历史数据（市场可能已关闭或数据暂不可用）。"
+
+            labels = [b["t"][:10] for b in bars]   # YYYY-MM-DD
+            closes = [round(float(b["c"]), 4) for b in bars]
+            highs  = [round(float(b["h"]), 4) for b in bars]
+            lows   = [round(float(b["l"]), 4) for b in bars]
+            first, last = closes[0], closes[-1]
+            change_pct = (last - first) / first * 100
+
+            chart_payload = {
+                "type": "chart_data",
+                "symbol": symbol,
+                "days": len(bars),
+                "labels": labels,
+                "closes": closes,
+                "highs": highs,
+                "lows": lows,
+                "change_pct": round(change_pct, 2),
+            }
+            # Summary for Claude to read
+            summary = (f"{symbol} 近 {len(bars)} 天价格走势：起始 ${first:,.4g}，最新 ${last:,.4g}，"
+                       f"区间涨跌 {change_pct:+.2f}%。已生成折线图。")
+            return _json.dumps({"__chart__": chart_payload, "summary": summary}, ensure_ascii=False)
+
         else:
             return f"未知工具: {tool_name}"
 
@@ -269,21 +347,38 @@ def portfolio(request):
         return JsonResponse({"portfolio": [], "error": str(e)})
 
 
+_collect_running = False
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def collect(request):
-    try:
-        from apps.pipeline.collector import run as collect_run
-        from apps.pipeline.extractor import run as extract_run
-        collect_run(force=True)
-        extract_run()
-        from apps.pipeline.models import NewsArticle
-        from django.utils import timezone
-        count = NewsArticle.objects.filter(fetched_at__date=timezone.now().date()).count()
-        return JsonResponse({"status": "ok", "today_count": count})
-    except Exception as e:
-        logger.exception("collect error")
-        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+    global _collect_running
+    if _collect_running:
+        return JsonResponse({"status": "ok", "message": "采集已在运行中"})
+
+    def run_pipeline():
+        global _collect_running
+        _collect_running = True
+        try:
+            from apps.pipeline.collector import run as collect_run
+            from apps.pipeline.extractor import run as extract_run
+            collect_run(force=True)
+            extract_run()
+        except Exception as e:
+            logger.exception("collect pipeline error")
+        finally:
+            _collect_running = False
+            try:
+                from django.db import connection
+                connection.close()
+            except Exception:
+                pass
+
+    import threading
+    t = threading.Thread(target=run_pipeline, daemon=True)
+    t.start()
+    return JsonResponse({"status": "ok", "message": "采集已在后台启动"})
 
 
 @csrf_exempt
@@ -337,6 +432,7 @@ def chat(request):
         requires_confirmation = False
         action_type = "info"
         reply = "抱歉，出现了未知错误，请重试。"
+        chart_data = None
 
         for _ in range(5):  # max 5 tool calls per turn
             response = client.messages.create(
@@ -361,14 +457,24 @@ def chat(request):
 
             elif response.stop_reason == "tool_use":
                 # Execute all tool calls
+                import json as _json
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
-                        result = execute_tool(block.name, block.input)
+                        raw = execute_tool(block.name, block.input)
+                        # Check if this is a chart tool result
+                        if block.name == "get_price_chart":
+                            try:
+                                parsed = _json.loads(raw)
+                                if "__chart__" in parsed:
+                                    chart_data = parsed["__chart__"]
+                                    raw = parsed.get("summary", raw)
+                            except Exception:
+                                pass
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": result,
+                            "content": raw,
                         })
                         if block.name in ("place_order", "close_position"):
                             action_type = "trade_executed"
@@ -387,6 +493,7 @@ def chat(request):
             "reply": reply,
             "requires_confirmation": requires_confirmation,
             "action_type": action_type,
+            "chart_data": chart_data,
         })
 
     except Exception as e:
