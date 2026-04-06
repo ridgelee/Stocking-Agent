@@ -1,11 +1,15 @@
 """
-reporter.py — 报告生成层
+reporter.py — 报告生成层（Planner-Executor-Reflection-Replan-Final 架构）
 
-四步生成流程：
-  Step A: compute_summary()  — 纯 Python 统计，无 AI 调用
-  Step B: fetch_portfolio()  — 通过 Anthropic SDK mcp_servers 调用 Alpaca MCP 获取持仓
-  Step C: generate_analysis() — 1次 Claude API 调用，生成三章节分析文本
-  Step D: 存入 DailyReport 表（update_or_create）
+生成流程（5步 AI 调用）：
+  Step A: compute_summary()     — 纯 Python 统计，无 AI 调用
+  Step B: fetch_portfolio()     — 直接调用 Alpaca REST API 获取持仓
+  Step C: plan()                — AI Planner：对今日数据进行规划，确定报告重点
+  Step D: execute_report()      — AI Executor：按 plan 生成完整报告草稿
+  Step E: reflect()             — AI Reflection：对草稿进行批判性评估
+  Step F: replan()              — AI Replan：根据 reflection 制定改进方向
+  Step G: final_report()        — AI Final：根据 replan 生成最终报告
+  Step H: 存入 DailyReport 表
 """
 
 import json
@@ -26,7 +30,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def compute_ticker_frequency(articles):
-    """统计所有 related_tickers 出现频次，返回排序后的列表。"""
     counter = Counter()
     for article in articles:
         tickers = article.related_tickers or []
@@ -35,15 +38,10 @@ def compute_ticker_frequency(articles):
     return [{"ticker": t, "count": c} for t, c in counter.most_common()]
 
 
-def select_top_highlights(articles, limit=5):
-    """
-    优先级：impact_level=High > Bullish/Bearish > Neutral
-    返回最多 limit 条文章的 one_line_summary（或 title）。
-    """
+def select_top_highlights(articles, limit=8):
     high = [a for a in articles if a.impact_level == "High"]
     mid = [a for a in articles if a.impact_level != "High" and a.sentiment in ("Bullish", "Bearish")]
     low = [a for a in articles if a.impact_level != "High" and a.sentiment not in ("Bullish", "Bearish")]
-
     selected = (high + mid + low)[:limit]
     return [
         {
@@ -52,66 +50,49 @@ def select_top_highlights(articles, limit=5):
             "impact_level": a.impact_level,
             "sentiment": a.sentiment,
             "event_type": a.event_type,
+            "source_type": a.source_type,
         }
         for a in selected
     ]
 
 
 def compute_summary(articles):
-    """Step A: 统计汇总，纯 Python，无 AI 调用。"""
     sentiment_dist = {"Bullish": 0, "Bearish": 0, "Neutral": 0}
     event_type_dist = {}
-
     for a in articles:
         if a.sentiment in sentiment_dist:
             sentiment_dist[a.sentiment] += 1
         if a.event_type:
             event_type_dist[a.event_type] = event_type_dist.get(a.event_type, 0) + 1
-
     return {
         "total_news_count": len(articles),
         "high_impact_count": sum(1 for a in articles if a.impact_level == "High"),
         "sentiment_distribution": sentiment_dist,
         "event_type_distribution": event_type_dist,
         "top_tickers": compute_ticker_frequency(articles)[:10],
-        "highlights": select_top_highlights(articles, limit=5),
+        "highlights": select_top_highlights(articles, limit=8),
     }
 
 
 # ---------------------------------------------------------------------------
-# Step B — Alpaca MCP via Anthropic SDK mcp_servers
+# Step B — Alpaca REST API 获取持仓
 # ---------------------------------------------------------------------------
 
 def fetch_portfolio():
-    """
-    直接调用 Alpaca REST API /v2/positions 获取持仓。
-    失败时返回 []，记录日志，不中断报告生成。
-    返回格式：
-    [{"symbol": "NVDA", "qty": "10", "avg_entry_price": "800.00",
-      "current_price": "875.00", "market_value": "8750.00",
-      "unrealized_pl": "750.00", "unrealized_plpc": "0.094"}]
-    """
     import requests as req
-
     base_url = getattr(settings, "ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
     api_key = settings.ALPACA_API_KEY
     secret_key = settings.ALPACA_SECRET_KEY
-
     if not api_key or not secret_key:
         logger.warning("fetch_portfolio: ALPACA keys not set, returning []")
         return []
-
     try:
         resp = req.get(
             f"{base_url}/v2/positions",
-            headers={
-                "APCA-API-KEY-ID": api_key,
-                "APCA-API-SECRET-KEY": secret_key,
-            },
+            headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": secret_key},
             timeout=10,
         )
         resp.raise_for_status()
-        raw = resp.json()
         positions = [
             {
                 "symbol": p.get("symbol"),
@@ -122,119 +103,369 @@ def fetch_portfolio():
                 "unrealized_pl": p.get("unrealized_pl"),
                 "unrealized_plpc": p.get("unrealized_plpc"),
             }
-            for p in raw
+            for p in resp.json()
         ]
-        logger.info(f"fetch_portfolio: 成功获取 {len(positions)} 条持仓")
+        logger.info(f"fetch_portfolio: 获取 {len(positions)} 条持仓")
         return positions
     except Exception as e:
-        logger.warning(f"fetch_portfolio: 调用失败 ({type(e).__name__}: {e})，使用 fallback []")
+        logger.warning(f"fetch_portfolio: 失败 ({type(e).__name__}: {e})，使用 fallback []")
         return []
 
 
 # ---------------------------------------------------------------------------
-# Step C — Claude API 分析（1次调用）
+# Helper — 构建数据 context 字符串（各步骤共用）
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are a senior equity market analyst. Generate a structured daily market report in Chinese.
-
-Your report MUST contain exactly these three sections:
-## 今日市场趋势
-[2-3 sentences describing today's dominant market themes based on the statistics]
-
-## 重要事件深度总结
-[Top 3-5 important events. For EACH event: background + market impact, 2-3 sentences each]
-REQUIREMENT: Must include specific data/numbers.
-FORBIDDEN: Vague statements like "影响较大" or "值得关注" without data support.
-
-## 持仓相关投资参考
-[For each holding in the portfolio: explain relevant news impact]
-[If no relevant news: write "今日暂无直接相关新闻"]
-MANDATORY LAST LINE: ⚠️ 以上内容仅供参考，不构成投资建议。
-
-Return the three sections as a JSON object with keys: market_trend, event_summary, portfolio_insight
-JSON only, no markdown fences."""
-
-
-def generate_analysis(summary: dict, portfolio: list, report_date: str) -> dict:
-    """
-    Step C: 调用 Claude API 一次，生成三章节分析文本。
-    失败时返回降级文本，不 crash。
-    """
-    fallback = {
-        "market_trend": "（AI 分析暂不可用）今日市场数据已采集，请稍后重试。",
-        "event_summary": "（AI 分析暂不可用）重要事件汇总生成失败，请稍后重试。",
-        "portfolio_insight": "（AI 分析暂不可用）持仓分析生成失败。\n\n⚠️ 以上内容仅供参考，不构成投资建议。",
-    }
-
+def _build_context(summary: dict, portfolio: list, report_date: str) -> str:
     highlights_text = "\n".join(
         f"- [{h.get('impact_level','?')}][{h.get('sentiment','?')}] {h.get('summary', h.get('title',''))}"
-        for h in summary.get("highlights", [])
+        for h in summary.get("highlights", [])[:5]  # top 5 only
     )
     top_tickers_text = ", ".join(
-        f"{t['ticker']}({t['count']})" for t in summary.get("top_tickers", [])[:10]
+        f"{t['ticker']}({t['count']})" for t in summary.get("top_tickers", [])[:8]
     )
-    portfolio_text = (
-        json.dumps(portfolio, ensure_ascii=False, indent=2) if portfolio else "暂无持仓"
-    )
-
-    user_message = f"""
-报告日期：{report_date}
-总新闻数：{summary['total_news_count']}
-高影响新闻数：{summary['high_impact_count']}
-情绪分布：{json.dumps(summary['sentiment_distribution'], ensure_ascii=False)}
-事件类型分布：{json.dumps(summary['event_type_distribution'], ensure_ascii=False)}
-高频股票代码（top10）：{top_tickers_text}
-
-精选新闻亮点（最多5条）：
+    # Compact portfolio: just symbol, current_price, unrealized_plpc
+    portfolio_compact = [
+        {"s": p.get("symbol"), "price": p.get("current_price"), "pnl%": p.get("unrealized_plpc")}
+        for p in portfolio
+    ] if portfolio else []
+    portfolio_text = json.dumps(portfolio_compact, ensure_ascii=False) if portfolio_compact else "暂无持仓"
+    sent = summary['sentiment_distribution']
+    return f"""日期:{report_date} 新闻:{summary['total_news_count']}条(高影响:{summary['high_impact_count']}) 情绪:看多{sent.get('Bullish',0)}/看空{sent.get('Bearish',0)}/中性{sent.get('Neutral',0)}
+热门股:{top_tickers_text}
+精选新闻(top5):
 {highlights_text}
+持仓:{portfolio_text}"""
 
-当前持仓：
-{portfolio_text}
 
-请根据以上数据生成今日市场报告。
-""".strip()
+SECTION_KEYS = ["AI_HOTSPOTS", "EVENT_ANALYSIS", "TREND_INSIGHTS", "RISK_OPPORTUNITY", "PORTFOLIO_INSIGHT"]
+SECTION_MAP = {
+    "AI_HOTSPOTS": "ai_hotspots",
+    "EVENT_ANALYSIS": "event_analysis",
+    "TREND_INSIGHTS": "trend_insights",
+    "RISK_OPPORTUNITY": "risk_opportunity",
+    "PORTFOLIO_INSIGHT": "portfolio_insight",
+}
 
+
+def _parse_sections(raw: str) -> dict:
+    """Parse delimiter-based section format into a dict."""
+    result = {}
+    current_key = None
+    current_lines = []
+    for line in raw.split("\n"):
+        stripped = line.strip()
+        matched = None
+        for k in SECTION_KEYS:
+            if stripped == f"==={k}===":
+                matched = k
+                break
+        if matched:
+            if current_key and current_lines:
+                result[SECTION_MAP[current_key]] = "\n".join(current_lines).strip()
+            current_key = matched
+            current_lines = []
+        else:
+            if current_key is not None:
+                current_lines.append(line)
+    if current_key and current_lines:
+        result[SECTION_MAP[current_key]] = "\n".join(current_lines).strip()
+    return result
+
+
+def _call_claude(system: str, user: str, max_tokens: int = 2048, model: str = "claude-sonnet-4-6") -> str:
+    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+    return response.content[0].text.strip()
+
+
+HAIKU = "claude-haiku-4-5-20251001"
+SONNET = "claude-sonnet-4-6"
+
+# Crypto symbol suffix patterns for sector detection
+_CRYPTO_SUFFIXES = ("USD", "BTC", "ETH")
+_CRYPTO_BASES = {"BTC", "ETH", "SOL", "DOGE", "AVAX", "LTC", "BCH", "LINK", "UNI", "AAVE", "USDC", "USDT"}
+
+
+def _strip_markdown(text: str) -> str:
+    """Remove common markdown formatting from text."""
+    import re
+    # Remove bold/italic markers
+    text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)
+    # Remove heading markers
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Remove inline code
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    # Remove horizontal rules
+    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    # Remove bullet point markers (-, *, ·) at line start but keep content
+    text = re.sub(r'^\s*[-*·]\s+', '• ', text, flags=re.MULTILINE)
+    # Collapse multiple blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def _classify_portfolio_sectors(portfolio: list) -> dict:
+    """Group holdings by sector. Returns {sector_name: [symbol, ...]}."""
+    sectors = {}
+    for p in portfolio:
+        sym = (p.get("symbol") or "").upper().replace("/", "")
+        base = next((c for c in sorted(_CRYPTO_BASES, key=len, reverse=True) if sym.startswith(c)), None)
+        if base:
+            sector = "加密货币"
+        elif sym.endswith("USD") and len(sym) > 3:
+            sector = "加密货币"
+        else:
+            sector = "科技股/其他"
+        sectors.setdefault(sector, []).append(sym)
+    return sectors
+
+
+def _parse_json(raw: str) -> dict:
+    # Strip markdown fences
+    if "```" in raw:
+        lines = raw.split("\n")
+        # Remove first and last fence lines
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        raw = "\n".join(lines)
+    raw = raw.strip()
+    # Try direct parse
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    # Try extracting outermost { ... }
+    start, end = raw.find("{"), raw.rfind("}")
+    if start != -1 and end != -1:
+        candidate = raw[start:end + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+    # Last resort: use Claude to fix the broken JSON
+    logger.warning("_parse_json: standard parse failed, attempting repair")
     try:
         client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
+        repair_resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            system="Fix the broken JSON below and return ONLY valid JSON, nothing else.",
+            messages=[{"role": "user", "content": raw[:8000]}],
         )
-        raw = response.content[0].text.strip()
-
-        # Strip markdown fences if present
-        if raw.startswith("```"):
-            lines = raw.split("\n")
-            raw = "\n".join(lines[1:])  # drop first ```json line
-            if raw.rstrip().endswith("```"):
-                raw = raw.rstrip()[:-3].strip()
-
-        # Try direct parse first
-        try:
-            analysis = json.loads(raw)
-        except json.JSONDecodeError:
-            # Fallback: extract JSON object using brace matching
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1:
-                analysis = json.loads(raw[start:end + 1])
-            else:
-                raise
-
-        # Ensure disclaimer in portfolio_insight
-        if "⚠️" not in analysis.get("portfolio_insight", ""):
-            analysis["portfolio_insight"] = (
-                analysis.get("portfolio_insight", "") + "\n\n⚠️ 以上内容仅供参考，不构成投资建议。"
-            )
-
-        logger.info("generate_analysis: Claude 分析生成成功")
-        return analysis
-
+        repaired = repair_resp.content[0].text.strip()
+        if "```" in repaired:
+            repaired = "\n".join([l for l in repaired.split("\n") if not l.strip().startswith("```")])
+        return json.loads(repaired)
     except Exception as e:
-        logger.warning(f"generate_analysis: 失败 ({type(e).__name__}: {e})，使用降级文本")
-        return fallback
+        raise ValueError(f"JSON parse failed after repair attempt: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Step C — AI Planner
+# ---------------------------------------------------------------------------
+
+PLANNER_SYSTEM = """You are a senior AI & technology market analyst. Given today's news data, produce a brief report plan in Chinese using EXACTLY this format:
+
+TOP_EVENTS: event1 | event2 | event3
+KEY_TICKERS: TICK1, TICK2, TICK3
+FOCUS_THEMES: theme1 | theme2
+RISK: main risk signal
+OPPORTUNITY: main opportunity
+PORTFOLIO_NOTE: one line
+
+Plain text only, no JSON, no markdown."""
+
+
+def _parse_plan_text(raw: str) -> dict:
+    """Parse plain-text plan format into dict."""
+    result = {"top_events": [], "key_tickers": [], "focus_themes": [], "risk_signals": [], "opportunity_signals": [], "portfolio_relevance": ""}
+    for line in raw.split("\n"):
+        line = line.strip()
+        if line.startswith("TOP_EVENTS:"):
+            result["top_events"] = [e.strip() for e in line[11:].split("|") if e.strip()]
+        elif line.startswith("KEY_TICKERS:"):
+            result["key_tickers"] = [t.strip() for t in line[12:].split(",") if t.strip()]
+        elif line.startswith("FOCUS_THEMES:"):
+            result["focus_themes"] = [t.strip() for t in line[13:].split("|") if t.strip()]
+        elif line.startswith("RISK:"):
+            result["risk_signals"] = [line[5:].strip()]
+        elif line.startswith("OPPORTUNITY:"):
+            result["opportunity_signals"] = [line[12:].strip()]
+        elif line.startswith("PORTFOLIO_NOTE:"):
+            result["portfolio_relevance"] = line[15:].strip()
+    return result
+
+
+def plan(summary: dict, portfolio: list) -> dict:
+    logger.info("[reporter] Step C: Planner 规划报告重点")
+    highlights = [h.get("summary", h.get("title", ""))[:80] for h in summary.get("highlights", [])[:5]]
+    tickers = [t["ticker"] for t in summary.get("top_tickers", [])[:6]]
+    holdings = [p.get("symbol") for p in portfolio]
+    brief = f"""新闻{summary['total_news_count']}条,高影响{summary['high_impact_count']},情绪{summary['sentiment_distribution']}
+热门:{tickers} 持仓:{holdings}
+头条:{highlights}"""
+    raw = _call_claude(PLANNER_SYSTEM, f"{brief}\n\n请制定今日报告规划。", max_tokens=300)
+    result = _parse_plan_text(raw)
+    logger.info(f"[reporter] Planner 完成，top_events={result.get('top_events', [])[:1]}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Step D — AI Executor（按 plan 生成报告草稿）
+# ---------------------------------------------------------------------------
+
+EXECUTOR_SYSTEM = """You are a senior AI & technology market analyst. Generate a detailed daily report in Chinese following the plan provided.
+
+Use EXACTLY this format with these delimiter lines (output the delimiters literally):
+
+===AI_HOTSPOTS===
+[Top 3-5 AI/tech events, each with specific numbers]
+
+===PORTFOLIO_INSIGHT===
+[Only cover the sectors that are actually held (provided in the data). Per held sector: 1-2 sentences on today's news relevance, then one clear recommendation (持有/加仓/减仓/观望) with brief rationale. No per-stock breakdown.]
+⚠️ 以上为模拟交易参考建议，不构成真实投资建议，投资有风险。
+
+===EVENT_ANALYSIS===
+[Background + market impact per event, data-backed]
+
+===TREND_INSIGHTS===
+[Directional insights: tech / policy / capital]
+
+===RISK_OPPORTUNITY===
+[【风险】and 【机会】clearly separated]"""
+
+
+def execute_report(context: str, report_plan: dict) -> dict:
+    logger.info("[reporter] Step D: Executor 生成报告草稿")
+    user = f"""今日数据：
+{context}
+
+报告规划：
+{json.dumps(report_plan, ensure_ascii=False, indent=2)}
+
+请按规划生成完整报告草稿。"""
+    raw = _call_claude(EXECUTOR_SYSTEM, user, max_tokens=2500, model=HAIKU)
+    result = _parse_sections(raw)
+    if not result.get("ai_hotspots"):
+        logger.warning("[reporter] Executor: section parse found no content, raw preview: " + raw[:200])
+    logger.info("[reporter] Executor 草稿生成完成")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Step E+F — AI Reflect + Replan（合并为单次 Haiku 调用）
+# ---------------------------------------------------------------------------
+
+REFLECT_REPLAN_SYSTEM = """You are a report editor. Critique the draft and give improvement instructions in Chinese using EXACTLY this format:
+
+SCORE: 7
+FIX1: most important fix
+FIX2: second fix
+FIX3: third fix
+KEY_FIX: single most critical improvement
+
+Plain text only, no JSON, no markdown."""
+
+
+def reflect_and_replan(draft: dict, context: str, report_plan: dict) -> dict:
+    logger.info("[reporter] Step E+F: Reflect+Replan")
+    draft_summary = " | ".join(
+        f"{k}:{str(v)[:120]}" for k, v in draft.items() if v
+    )
+    user = f"草稿:{draft_summary}\n\n请评估并给出改进方案。"
+    raw = _call_claude(REFLECT_REPLAN_SYSTEM, user, max_tokens=250, model=HAIKU)
+    # Parse plain text format
+    result = {"overall_score": None, "improvement_priorities": [], "key_fix": "", "sections_to_strengthen": {}}
+    for line in raw.split("\n"):
+        line = line.strip()
+        if line.startswith("SCORE:"):
+            try:
+                result["overall_score"] = int(line[6:].strip())
+            except ValueError:
+                pass
+        elif line.startswith("FIX"):
+            colon = line.find(":")
+            if colon != -1:
+                result["improvement_priorities"].append(line[colon+1:].strip())
+        elif line.startswith("KEY_FIX:"):
+            result["key_fix"] = line[8:].strip()
+    logger.info(f"[reporter] Reflect+Replan 完成，score={result.get('overall_score')}, key_fix={result.get('key_fix','')[:60]}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Step G — AI Final Report（最终版本）
+# ---------------------------------------------------------------------------
+
+FINAL_SYSTEM = """You are a senior AI & technology market analyst producing the FINAL polished daily report in Chinese.
+Apply ALL improvements from the replan. Make it sharp, specific, complete.
+
+Use EXACTLY this format with these delimiter lines (output the delimiters literally):
+
+===AI_HOTSPOTS===
+[Top 3-5 AI/tech events with specific numbers/metrics]
+
+===EVENT_ANALYSIS===
+[Background + impact per event, always data-backed]
+
+===TREND_INSIGHTS===
+[Concrete directional insights: tech / policy / capital]
+
+===RISK_OPPORTUNITY===
+[【风险】section and 【机会】section clearly separated, actionable]
+
+===PORTFOLIO_INSIGHT===
+[Group holdings by sector (e.g. 加密货币、科技股、卫星通信). For each sector: summarize current exposure, relate to today's news themes, give one actionable sector-level recommendation (持有/加仓/减仓/观望) with rationale]
+⚠️ 以上为模拟交易参考建议，不构成真实投资建议，投资有风险。"""
+
+
+def final_report(context: str, draft: dict, reflect_replan_result: dict, portfolio: list = None) -> dict:
+    logger.info("[reporter] Step G: Final Report 生成最终版本")
+    draft_summary = "\n".join(
+        f"[{k.upper()}]\n{str(v)[:300]}..." if len(str(v)) > 300 else f"[{k.upper()}]\n{v}"
+        for k, v in draft.items() if v
+    )
+    portfolio_text = ""
+    if portfolio:
+        sectors = _classify_portfolio_sectors(portfolio)
+        sector_summary = "、".join(
+            f"{s}({', '.join(syms)})" for s, syms in sectors.items()
+        )
+        portfolio_text = f"\n当前持仓板块：{sector_summary}"
+
+    user = f"""今日数据：
+{context}{portfolio_text}
+
+报告草稿：
+{draft_summary}
+
+改进重点：{json.dumps(reflect_replan_result.get('improvement_priorities', []), ensure_ascii=False)}
+关键修复：{reflect_replan_result.get('key_fix', '')}
+
+请生成最终版今日分析报告。PORTFOLIO_INSIGHT章节只针对上面列出的持仓板块给建议，不要分析未持有的板块。"""
+    raw = _call_claude(FINAL_SYSTEM, user, max_tokens=2500, model=HAIKU)
+    result = _parse_sections(raw)
+
+    # Fall back to draft section if final is empty
+    for key in SECTION_MAP.values():
+        if not result.get(key) and draft.get(key):
+            result[key] = draft[key]
+
+    # Strip markdown from all sections
+    result = {k: _strip_markdown(v) if isinstance(v, str) else v for k, v in result.items()}
+
+    # Ensure disclaimer
+    disclaimer = "⚠️ 以上为模拟交易参考建议，不构成真实投资建议，投资有风险。"
+    if "⚠️" not in result.get("portfolio_insight", ""):
+        result["portfolio_insight"] = result.get("portfolio_insight", "") + f"\n\n{disclaimer}"
+
+    logger.info("[reporter] Final Report 生成完成")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -243,29 +474,69 @@ def generate_analysis(summary: dict, portfolio: list, report_date: str) -> dict:
 
 def run(date=None):
     """
-    Step A: compute_summary
-    Step B: fetch_portfolio
-    Step C: generate_analysis (1次 Claude API)
-    Step D: save to DailyReport
+    Planner-Executor-Reflect+Replan-Final 四步 AI 报告生成流程：
+      A: compute_summary  — Python 统计
+      B: fetch_portfolio  — Alpaca REST
+      C: plan()           — Sonnet Planner（规划报告重点）
+      D: execute_report() — Haiku Executor（生成草稿）
+      E+F: reflect_and_replan() — Haiku（评估+改进，合并单次调用）
+      G: final_report()   — Haiku Final（生成最终版）
+      H: save to DailyReport
     """
     if date is None:
         date = date_type.today()
 
-    logger.info(f"[reporter] 开始生成 {date} 报告")
+    logger.info(f"[reporter] 开始生成 {date} 报告（Planner-Executor-Reflection-Replan-Final）")
 
     # Step A
-    articles = list(NewsArticle.objects.filter(is_extracted=True))
-    logger.info(f"[reporter] Step A: 共 {len(articles)} 条已提取新闻")
+    from django.utils import timezone as dj_tz
+    today = dj_tz.now().date()
+    articles = list(
+        NewsArticle.objects.filter(is_extracted=True, fetched_at__date=today)
+        .order_by("-impact_level", "-published_at")[:20]
+    )
+    logger.info(f"[reporter] Step A: {len(articles)} 条已提取新闻")
     summary = compute_summary(articles)
 
     # Step B
-    logger.info("[reporter] Step B: 获取持仓")
+    logger.info("[reporter] Step B: 获取 Alpaca 持仓")
     portfolio = fetch_portfolio()
-    logger.info(f"[reporter] Step B: 持仓条数 = {len(portfolio)}")
 
-    # Step C
-    logger.info("[reporter] Step C: 调用 Claude 生成分析")
-    analysis_text = generate_analysis(summary, portfolio, str(date))
+    context = _build_context(summary, portfolio, str(date))
+
+    # Step C: Plan
+    try:
+        report_plan = plan(summary, portfolio)
+    except Exception as e:
+        logger.warning(f"[reporter] Planner 失败: {e}，使用空 plan")
+        report_plan = {}
+
+    # Step D: Execute
+    try:
+        draft = execute_report(context, report_plan)
+    except Exception as e:
+        logger.warning(f"[reporter] Executor 失败: {e}，使用降级内容")
+        draft = {
+            "ai_hotspots": "（AI 分析暂不可用）",
+            "event_analysis": "（AI 分析暂不可用）",
+            "trend_insights": "（AI 分析暂不可用）",
+            "risk_opportunity": "（AI 分析暂不可用）",
+            "portfolio_insight": "（AI 分析暂不可用）\n\n⚠️ 以上为模拟交易参考建议，不构成真实投资建议，投资有风险。",
+        }
+
+    # Step E+F: Reflect + Replan (merged, Haiku)
+    try:
+        ef_result = reflect_and_replan(draft, context, report_plan)
+    except Exception as e:
+        logger.warning(f"[reporter] Reflect+Replan 失败: {e}，跳过")
+        ef_result = {"overall_score": None, "improvement_priorities": [], "sections_to_strengthen": {}, "key_fix": ""}
+
+    # Step G: Final (Haiku)
+    try:
+        analysis_text = final_report(context, draft, ef_result, portfolio=portfolio)
+    except Exception as e:
+        logger.warning(f"[reporter] Final Report 失败: {e}，使用草稿")
+        analysis_text = draft
 
     # Assemble full report
     full_report_data = {
@@ -273,14 +544,19 @@ def run(date=None):
         **summary,
         "portfolio": portfolio,
         "analysis_text": analysis_text,
+        "generation_meta": {
+            "method": "planner(sonnet)→executor(haiku)→reflect+replan(haiku)→final(haiku)",
+            "reflection_score": ef_result.get("overall_score"),
+            "plan_top_events": report_plan.get("top_events", []),
+        },
     }
 
-    # Step D
+    # Step H: Save
     obj, created = DailyReport.objects.update_or_create(
         report_date=date,
         defaults={"report_data": full_report_data, "status": "completed"},
     )
     action = "创建" if created else "更新"
-    logger.info(f"[reporter] Step D: 报告已{action}，id={obj.pk}")
+    logger.info(f"[reporter] 报告已{action}，id={obj.pk}")
     print(f"[reporter] 报告已{action}，report_date={date}, status=completed")
     return obj

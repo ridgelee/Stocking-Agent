@@ -44,7 +44,7 @@ def collect_tech_media():
     params = {
         "q": "AI OR semiconductor OR EV OR earnings OR stock",
         "language": "en",
-        "pageSize": 10,
+        "pageSize": 7,
         "sortBy": "publishedAt",
         "apiKey": api_key,
     }
@@ -112,7 +112,7 @@ def collect_financial_news():
     params = {
         "function": "NEWS_SENTIMENT",
         "topics": "technology,earnings,ipo",
-        "limit": 10,
+        "limit": 7,
         "sort": "LATEST",
         "apikey": api_key,
     }
@@ -121,7 +121,7 @@ def collect_financial_news():
         resp = requests.get(url, params=params, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-        feed = data.get("feed", [])
+        feed = data.get("feed", [])[:7]
     except Exception as e:
         logger.error(f"[collector] financial_news fetch error: {e}")
         return 0
@@ -220,7 +220,7 @@ def collect_social_media():
         if item["url"] not in seen:
             seen.add(item["url"])
             unique.append(item)
-        if len(unique) >= 10:
+        if len(unique) >= 6:
             break
 
     saved = 0
@@ -245,21 +245,25 @@ def collect_social_media():
 # ─────────────────────────────────────────────
 # Main Entry
 # ─────────────────────────────────────────────
-def run():
+def run(force: bool = False):
     """
     主入口。串行执行三个采集函数。
-    幂等：URL 为唯一键，使用 get_or_create。
-    今日已有 20+ 条则跳过。
+    force=True: 删除今日已有文章后重新采集（手动触发时使用）。
+    force=False: 今日已有 20+ 条则跳过（定时任务使用）。
     任一采集失败记录日志，不中断整体流程。
     """
     from apps.pipeline.models import NewsArticle
 
     today = dj_timezone.now().date()
-    today_count = NewsArticle.objects.filter(fetched_at__date=today).count()
 
-    if today_count >= 20:
-        logger.info(f"[collector] Today already has {today_count} articles, skipping.")
-        return
+    if force:
+        deleted, _ = NewsArticle.objects.filter(fetched_at__date=today).delete()
+        logger.info(f"[collector] force=True, deleted {deleted} articles for today, re-collecting...")
+    else:
+        today_count = NewsArticle.objects.filter(fetched_at__date=today).count()
+        if today_count >= 20:
+            logger.info(f"[collector] Today already has {today_count} articles, skipping.")
+            return
 
     logger.info("[collector] Starting data collection...")
     total = 0
