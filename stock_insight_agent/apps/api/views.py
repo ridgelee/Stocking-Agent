@@ -1,19 +1,69 @@
 import json
 import logging
-from datetime import date
+import threading
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 
 import anthropic
+import requests
+from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
+from alpaca.data.requests import CryptoBarsRequest, CryptoSnapshotRequest, StockSnapshotRequest
+from alpaca.data.timeframe import TimeFrame
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.requests import MarketOrderRequest
 from django.conf import settings
 from django.http import JsonResponse
+from django.shortcuts import render
+from django.utils import timezone as dj_tz
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.shortcuts import render
 
 from apps.pipeline.models import NewsArticle, DailyReport
 
 logger = logging.getLogger(__name__)
 
 IMPACT_ORDER = {"High": 0, "Medium": 1, "Low": 2}
+
+# ── Alpaca helpers ────────────────────────────────────────────────────────────
+
+CRYPTO_BASES = frozenset({"BTC", "ETH", "SOL", "DOGE", "AVAX", "LTC", "BCH", "LINK", "UNI", "AAVE"})
+
+
+def _is_crypto(symbol: str) -> bool:
+    """Return True if symbol belongs to a known crypto asset."""
+    return any(symbol.upper().replace("/", "").startswith(c) for c in CRYPTO_BASES)
+
+
+def _normalize_crypto_symbol(symbol: str) -> str:
+    """Convert BTCUSD / BTC / BTC/USD → BTC/USD (Alpaca SDK format)."""
+    clean = symbol.upper().replace("/", "")
+    base = next(
+        (c for c in sorted(CRYPTO_BASES, key=len, reverse=True) if clean.startswith(c)),
+        None,
+    )
+    return f"{base}/USD" if base else clean
+
+
+def _trading_client() -> TradingClient:
+    return TradingClient(
+        api_key=settings.ALPACA_API_KEY,
+        secret_key=settings.ALPACA_SECRET_KEY,
+        paper=True,
+    )
+
+
+def _stock_data_client() -> StockHistoricalDataClient:
+    return StockHistoricalDataClient(
+        api_key=settings.ALPACA_API_KEY,
+        secret_key=settings.ALPACA_SECRET_KEY,
+    )
+
+
+def _crypto_data_client() -> CryptoHistoricalDataClient:
+    return CryptoHistoricalDataClient(
+        api_key=settings.ALPACA_API_KEY,
+        secret_key=settings.ALPACA_SECRET_KEY,
+    )
 
 CHAT_SYSTEM_PROMPT = """You are a stock trading assistant integrated with Alpaca Paper Trading.
 You help users check their portfolio and execute trades through natural conversation.
@@ -118,146 +168,119 @@ TOOLS = [
 
 
 def execute_tool(tool_name: str, tool_input: dict) -> str:
-    """执行工具，返回结果字符串给 Claude"""
-    import requests as req
-    base = settings.ALPACA_BASE_URL  # https://paper-api.alpaca.markets
-    headers = {
-        "APCA-API-KEY-ID": settings.ALPACA_API_KEY,
-        "APCA-API-SECRET-KEY": settings.ALPACA_SECRET_KEY,
-    }
-
+    """执行工具调用，返回结果字符串给 Claude。使用 alpaca-py SDK。"""
     try:
         if tool_name == "get_positions":
-            r = req.get(f"{base}/v2/positions", headers=headers, timeout=10)
-            r.raise_for_status()
-            positions = r.json()
+            positions = _trading_client().get_all_positions()
             if not positions:
                 return "当前无持仓。"
-            lines = []
-            for p in positions:
-                pnl = float(p.get('unrealized_pl', 0))
-                pnl_pct = float(p.get('unrealized_plpc', 0)) * 100
-                lines.append(
-                    f"{p['symbol']}: {p['qty']}股, 均价${p['avg_entry_price']}, "
-                    f"现价${p['current_price']}, 盈亏${pnl:+.2f}({pnl_pct:+.1f}%)"
-                )
+            lines = [
+                f"{p.symbol}: {p.qty}股, 均价${p.avg_entry_price}, "
+                f"现价${p.current_price}, 盈亏${float(p.unrealized_pl or 0):+.2f}"
+                f"({float(p.unrealized_plpc or 0) * 100:+.1f}%)"
+                for p in positions
+            ]
             return "\n".join(lines)
 
         elif tool_name == "get_account":
-            r = req.get(f"{base}/v2/account", headers=headers, timeout=10)
-            r.raise_for_status()
-            a = r.json()
-            return (f"账户总市值: ${float(a.get('portfolio_value', 0)):,.2f}\n"
-                    f"可用现金: ${float(a.get('cash', 0)):,.2f}\n"
-                    f"购买力: ${float(a.get('buying_power', 0)):,.2f}")
+            a = _trading_client().get_account()
+            return (f"账户总市值: ${float(a.portfolio_value or 0):,.2f}\n"
+                    f"可用现金: ${float(a.cash or 0):,.2f}\n"
+                    f"购买力: ${float(a.buying_power or 0):,.2f}")
 
         elif tool_name == "get_stock_snapshot":
             symbol = tool_input["symbol"].upper()
-            crypto_bases = {"BTC","ETH","SOL","DOGE","AVAX","LTC","BCH","LINK","UNI","AAVE"}
-            is_crypto = any(symbol.startswith(c) for c in crypto_bases)
-            if is_crypto:
-                # Alpaca crypto API requires BTC/USD format
-                crypto_symbol = symbol
-                if "/" not in crypto_symbol:
-                    ticker_base = next(c for c in sorted(crypto_bases, key=len, reverse=True) if crypto_symbol.startswith(c))
-                    crypto_symbol = f"{ticker_base}/USD"
-                r = req.get(
-                    f"https://data.alpaca.markets/v1beta3/crypto/us/snapshots?symbols={crypto_symbol}",
-                    headers=headers, timeout=10
+            if _is_crypto(symbol):
+                api_symbol = _normalize_crypto_symbol(symbol)
+                snaps = _crypto_data_client().get_crypto_snapshot(
+                    CryptoSnapshotRequest(symbol_or_symbols=api_symbol)
                 )
-                r.raise_for_status()
-                data = r.json().get("snapshots", {}).get(crypto_symbol, {})
-                lt = data.get("latestTrade", {})
-                dp = data.get("dailyBar", {})
-                return (f"{symbol} 最新价: ${lt.get('p', 'N/A')}\n"
-                        f"今日: 开盘${dp.get('o','N/A')} 最高${dp.get('h','N/A')} 最低${dp.get('l','N/A')}")
-            r = req.get(
-                f"https://data.alpaca.markets/v2/stocks/{symbol}/snapshot",
-                headers=headers, timeout=10
-            )
-            r.raise_for_status()
-            data = r.json()
-            lt = data.get("latestTrade", {})
-            lq = data.get("latestQuote", {})
-            dp = data.get("dailyBar", {})
-            return (f"{symbol} 最新价: ${lt.get('p', 'N/A')}\n"
-                    f"买/卖: ${lq.get('ap', 'N/A')} / ${lq.get('bp', 'N/A')}\n"
-                    f"今日涨跌: 开盘${dp.get('o', 'N/A')} 最高${dp.get('h', 'N/A')} 最低${dp.get('l', 'N/A')}")
+                snap = snaps.get(api_symbol)
+                lt = snap.latest_trade if snap else None
+                dp = snap.daily_bar if snap else None
+                return (f"{symbol} 最新价: ${lt.price if lt else 'N/A'}\n"
+                        f"今日: 开盘${dp.open if dp else 'N/A'} "
+                        f"最高${dp.high if dp else 'N/A'} 最低${dp.low if dp else 'N/A'}")
+            else:
+                snaps = _stock_data_client().get_stock_snapshot(
+                    StockSnapshotRequest(symbol_or_symbols=symbol)
+                )
+                snap = snaps.get(symbol)
+                lt = snap.latest_trade if snap else None
+                lq = snap.latest_quote if snap else None
+                dp = snap.daily_bar if snap else None
+                return (f"{symbol} 最新价: ${lt.price if lt else 'N/A'}\n"
+                        f"买/卖: ${lq.ask_price if lq else 'N/A'} / ${lq.bid_price if lq else 'N/A'}\n"
+                        f"今日涨跌: 开盘${dp.open if dp else 'N/A'} "
+                        f"最高${dp.high if dp else 'N/A'} 最低${dp.low if dp else 'N/A'}")
 
         elif tool_name == "place_order":
             symbol = tool_input["symbol"].upper().replace("/", "")
-            # 加密货币识别并转为 Alpaca 格式 BTC/USD
-            crypto_bases = {"BTC","ETH","SOL","DOGE","AVAX","LTC","BCH","LINK","UNI","AAVE"}
-            is_crypto = any(symbol.startswith(c) for c in crypto_bases)
-            if is_crypto and "/" not in symbol:
-                # BTCUSD -> BTC/USD
-                ticker_base = next(c for c in sorted(crypto_bases, key=len, reverse=True) if symbol.startswith(c))
-                symbol = f"{ticker_base}/USD"
-            tif = "gtc" if is_crypto else "day"
-            payload = {
-                "symbol": symbol,
-                "qty": str(tool_input["qty"]),
-                "side": tool_input["side"],
-                "type": "market",
-                "time_in_force": tif,
-            }
-            r = req.post(f"{base}/v2/orders", headers=headers, json=payload, timeout=10)
-            r.raise_for_status()
-            order = r.json()
+            crypto = _is_crypto(symbol)
+            if crypto:
+                symbol = _normalize_crypto_symbol(symbol)
+            order = _trading_client().submit_order(MarketOrderRequest(
+                symbol=symbol,
+                qty=tool_input["qty"],
+                side=OrderSide.BUY if tool_input["side"] == "buy" else OrderSide.SELL,
+                time_in_force=TimeInForce.GTC if crypto else TimeInForce.DAY,
+            ))
             side_cn = "买入" if tool_input["side"] == "buy" else "卖出"
-            return f"✅ 订单已提交！{side_cn} {symbol} {tool_input['qty']}股（市价单），订单ID: {order.get('id', '')[:8]}..."
+            return f"✅ 订单已提交！{side_cn} {symbol} {tool_input['qty']}股（市价单），订单ID: {str(order.id)[:8]}..."
 
         elif tool_name == "close_position":
             symbol = tool_input["symbol"].upper()
-            r = req.delete(f"{base}/v2/positions/{symbol}", headers=headers, timeout=10)
-            r.raise_for_status()
+            _trading_client().close_position(symbol)
             return f"✅ 已平仓 {symbol} 全部持仓。"
 
         elif tool_name == "get_price_chart":
-            import json as _json
-            from datetime import timedelta as _td
             symbol = tool_input["symbol"].upper().replace("/", "")
             days = max(3, min(int(tool_input.get("days", 30)), 365))
-            crypto_bases = {"BTC","ETH","SOL","DOGE","AVAX","LTC","BCH","LINK","UNI","AAVE"}
-            is_crypto = any(symbol.startswith(c) for c in crypto_bases)
-
-            # Use explicit date range: go back extra days to account for weekends/holidays
             end_dt = date.today()
-            start_dt = end_dt - _td(days=days + 10)
-            start_str = start_dt.isoformat()
-            end_str = end_dt.isoformat()
+            start_dt = end_dt - timedelta(days=days + 10)
 
-            if is_crypto:
-                ticker_base = next(c for c in sorted(crypto_bases, key=len, reverse=True) if symbol.startswith(c))
-                api_symbol = f"{ticker_base}/USD"
-                url = (f"https://data.alpaca.markets/v1beta3/crypto/us/bars"
-                       f"?symbols={api_symbol}&timeframe=1Day&start={start_str}&end={end_str}&sort=asc&limit={days+10}")
-                r = req.get(url, headers=headers, timeout=15)
-                r.raise_for_status()
-                bars = (r.json().get("bars") or {}).get(api_symbol) or []
+            if _is_crypto(symbol):
+                api_symbol = _normalize_crypto_symbol(symbol)
+                bar_set = _crypto_data_client().get_crypto_bars(CryptoBarsRequest(
+                    symbol_or_symbols=api_symbol,
+                    timeframe=TimeFrame.Day,
+                    start=datetime(start_dt.year, start_dt.month, start_dt.day, tzinfo=dt_timezone.utc),
+                    end=datetime(end_dt.year, end_dt.month, end_dt.day, tzinfo=dt_timezone.utc),
+                    limit=days + 10,
+                ))
+                raw_bars = bar_set.data.get(api_symbol, [])
+                bars = [
+                    {"t": str(b.timestamp)[:10], "c": b.close, "h": b.high, "l": b.low}
+                    for b in raw_bars
+                ]
             else:
-                # Use Alpha Vantage for stocks (Alpaca free plan lacks historical bars)
-                av_key = settings.ALPHAVANTAGE_KEY
+                # 股票历史数据走 Alpha Vantage（Alpaca 免费版无历史股票 K 线）
                 outputsize = "full" if days > 100 else "compact"
-                av_url = (f"https://www.alphavantage.co/query"
-                          f"?function=TIME_SERIES_DAILY&symbol={symbol}"
-                          f"&outputsize={outputsize}&apikey={av_key}")
-                r = req.get(av_url, timeout=15)
+                r = requests.get(
+                    "https://www.alphavantage.co/query",
+                    params={
+                        "function": "TIME_SERIES_DAILY",
+                        "symbol": symbol,
+                        "outputsize": outputsize,
+                        "apikey": settings.ALPHAVANTAGE_KEY,
+                    },
+                    timeout=15,
+                )
                 r.raise_for_status()
                 ts = r.json().get("Time Series (Daily)") or {}
-                # ts is dict keyed by date string descending
                 sorted_dates = sorted(ts.keys())[-days:]
-                bars = [{"t": d, "c": ts[d]["4. close"], "h": ts[d]["2. high"], "l": ts[d]["3. low"]} for d in sorted_dates]
+                bars = [
+                    {"t": d, "c": ts[d]["4. close"], "h": ts[d]["2. high"], "l": ts[d]["3. low"]}
+                    for d in sorted_dates
+                ]
 
-            # Trim to requested days
             if len(bars) > days:
                 bars = bars[-days:]
 
             if not bars:
-                logger.warning(f"[get_price_chart] No bars for {symbol}. Response: {r.text[:300]}")
                 return f"未能获取 {symbol} 的历史数据（市场可能已关闭或数据暂不可用）。"
 
-            labels = [b["t"][:10] for b in bars]   # YYYY-MM-DD
+            labels = [b["t"][:10] for b in bars]
             closes = [round(float(b["c"]), 4) for b in bars]
             highs  = [round(float(b["h"]), 4) for b in bars]
             lows   = [round(float(b["l"]), 4) for b in bars]
@@ -274,10 +297,9 @@ def execute_tool(tool_name: str, tool_input: dict) -> str:
                 "lows": lows,
                 "change_pct": round(change_pct, 2),
             }
-            # Summary for Claude to read
             summary = (f"{symbol} 近 {len(bars)} 天价格走势：起始 ${first:,.4g}，最新 ${last:,.4g}，"
                        f"区间涨跌 {change_pct:+.2f}%。已生成折线图。")
-            return _json.dumps({"__chart__": chart_payload, "summary": summary}, ensure_ascii=False)
+            return json.dumps({"__chart__": chart_payload, "summary": summary}, ensure_ascii=False)
 
         else:
             return f"未知工具: {tool_name}"
@@ -300,7 +322,6 @@ def news_list(request):
     sentiment = request.GET.get("sentiment")
     source_type = request.GET.get("source_type")
 
-    from django.utils import timezone as dj_tz
     today = dj_tz.now().date()
     qs = NewsArticle.objects.filter(fetched_at__date=today)
     if impact_level:
@@ -375,7 +396,6 @@ def collect(request):
             except Exception:
                 pass
 
-    import threading
     t = threading.Thread(target=run_pipeline, daemon=True)
     t.start()
     return JsonResponse({"status": "ok", "message": "采集已在后台启动"})
@@ -457,7 +477,6 @@ def chat(request):
 
             elif response.stop_reason == "tool_use":
                 # Execute all tool calls
-                import json as _json
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
@@ -465,7 +484,7 @@ def chat(request):
                         # Check if this is a chart tool result
                         if block.name == "get_price_chart":
                             try:
-                                parsed = _json.loads(raw)
+                                parsed = json.loads(raw)
                                 if "__chart__" in parsed:
                                     chart_data = parsed["__chart__"]
                                     raw = parsed.get("summary", raw)

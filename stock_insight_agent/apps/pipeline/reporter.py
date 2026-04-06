@@ -79,31 +79,27 @@ def compute_summary(articles):
 # ---------------------------------------------------------------------------
 
 def fetch_portfolio():
-    import requests as req
-    base_url = getattr(settings, "ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+    from alpaca.trading.client import TradingClient
+
     api_key = settings.ALPACA_API_KEY
     secret_key = settings.ALPACA_SECRET_KEY
     if not api_key or not secret_key:
         logger.warning("fetch_portfolio: ALPACA keys not set, returning []")
         return []
     try:
-        resp = req.get(
-            f"{base_url}/v2/positions",
-            headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": secret_key},
-            timeout=10,
-        )
-        resp.raise_for_status()
+        client = TradingClient(api_key=api_key, secret_key=secret_key, paper=True)
+        raw = client.get_all_positions()
         positions = [
             {
-                "symbol": p.get("symbol"),
-                "qty": p.get("qty"),
-                "avg_entry_price": p.get("avg_entry_price"),
-                "current_price": p.get("current_price"),
-                "market_value": p.get("market_value"),
-                "unrealized_pl": p.get("unrealized_pl"),
-                "unrealized_plpc": p.get("unrealized_plpc"),
+                "symbol": str(p.symbol),
+                "qty": str(p.qty),
+                "avg_entry_price": str(p.avg_entry_price),
+                "current_price": str(p.current_price),
+                "market_value": str(p.market_value),
+                "unrealized_pl": str(p.unrealized_pl),
+                "unrealized_plpc": str(p.unrealized_plpc),
             }
-            for p in resp.json()
+            for p in raw
         ]
         logger.info(f"fetch_portfolio: 获取 {len(positions)} 条持仓")
         return positions
@@ -187,8 +183,6 @@ def _call_claude(system: str, user: str, max_tokens: int = 2048, model: str = "c
 HAIKU = "claude-haiku-4-5-20251001"
 SONNET = "claude-sonnet-4-6"
 
-# Crypto symbol suffix patterns for sector detection
-_CRYPTO_SUFFIXES = ("USD", "BTC", "ETH")
 _CRYPTO_BASES = {"BTC", "ETH", "SOL", "DOGE", "AVAX", "LTC", "BCH", "LINK", "UNI", "AAVE", "USDC", "USDT"}
 
 

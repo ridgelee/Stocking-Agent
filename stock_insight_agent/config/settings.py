@@ -85,9 +85,6 @@ CORS_ALLOW_ALL_ORIGINS = True
 # API Keys
 NEWSAPI_KEY = os.environ.get('NEWSAPI_KEY', '')
 ALPHAVANTAGE_KEY = os.environ.get('ALPHAVANTAGE_KEY', '')
-REDDIT_CLIENT_ID = os.environ.get('REDDIT_CLIENT_ID', '')
-REDDIT_CLIENT_SECRET = os.environ.get('REDDIT_CLIENT_SECRET', '')
-REDDIT_USER_AGENT = os.environ.get('REDDIT_USER_AGENT', 'StockInsightAgent/1.0')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 ALPACA_API_KEY = os.environ.get('ALPACA_API_KEY', '')
 ALPACA_SECRET_KEY = os.environ.get('ALPACA_SECRET_KEY', '')
