@@ -55,7 +55,7 @@ stock_insight_agent/
 │           └── index.html ← 整个前端页面（单页应用）
 ```
 
-<img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406150741473.png" alt="image-20260406150741473" style="zoom:80%;" />
+<img src="docs/images/image-20260406150741473.png" alt="image-20260406150741473" style="zoom:80%;" />
 
 #### 关键决策
 
@@ -72,7 +72,7 @@ stock_insight_agent/
 
    我的vibecoding prompt: CoT思维链式提问
 
-   <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406153037795.png" alt="image-20260406153037795" style="zoom:50%;" />
+   <img src="docs/images/image-20260406153037795.png" alt="image-20260406153037795" style="zoom:50%;" />
 
 2. **新闻处理两阶段分离**
 
@@ -96,23 +96,23 @@ stock_insight_agent/
 
 1. 可视化
 
-   <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406121823257.png" alt="image-20260406121823257" style="zoom:70%;" />
+   <img src="docs/images/image-20260406121823257.png" alt="image-20260406121823257" style="zoom:70%;" />
 
 2. 今日AI领域主要热点
 
-   <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406121834350.png" alt="image-20260406121834350" style="zoom:50%;" />
+   <img src="docs/images/image-20260406121834350.png" alt="image-20260406121834350" style="zoom:50%;" />
 
 3. 重点事件深度总结
 
-   <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406121854989.png" alt="image-20260406121854989" style="zoom:50%;" />
+   <img src="docs/images/image-20260406121854989.png" alt="image-20260406121854989" style="zoom:50%;" />
 
 4. 趋势判断
 
-   <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406121907663.png" alt="image-20260406121907663" style="zoom:50%;" />
+   <img src="docs/images/image-20260406121907663.png" alt="image-20260406121907663" style="zoom:50%;" />
 
 5. 🌟根据持仓板块给出投资建议
 
-   ![image-20260406121922674](/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406121922674.png)
+   ![image-20260406121922674](docs/images/image-20260406121922674.png)
 
                     【collector.py】
                     从3个来源抓新闻
@@ -149,7 +149,7 @@ stock_insight_agent/
 
 ### 2.2 网页前后端: 持仓看板 + 新闻看板 + AI交易对话助手
 
-![image-20260406121443710](/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406121443710.png)
+![image-20260406121443710](docs/images/image-20260406121443710.png)
 
 ```python
 浏览器 index.html
@@ -175,7 +175,7 @@ stock_insight_agent/
 
 **新闻收集表**
 
-![image-20260406121154321](/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406121154321.png)
+![image-20260406121154321](docs/images/image-20260406121154321.png)
 
 ```NewsArticle（新闻表）
 NewsArticle（新闻表）
@@ -208,13 +208,13 @@ DailyReport（每日报告表）
 
 1. 对话框确认买入
 
-<img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406115938984.png" alt="image-20260406115938984" style="zoom:80%;" />
+<img src="docs/images/image-20260406115938984.png" alt="image-20260406115938984" style="zoom:80%;" />
 
-2. 前端显示持仓![image-20260406120017829](/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406120017829.png)
+2. 前端显示持仓![image-20260406120017829](docs/images/image-20260406120017829.png)
 
 3. 后端订单操作
 
-   <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406120126836.png" alt="image-20260406120126836" style="zoom:50%;" />
+   <img src="docs/images/image-20260406120126836.png" alt="image-20260406120126836" style="zoom:50%;" />
 
 ---
 
@@ -318,7 +318,7 @@ end_turn             tool_use             end_turn
 
 - 直接询问对话agent: 股票 + 时间段
 
-  ![image-20260406120431720](/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406120431720.png)
+  ![image-20260406120431720](docs/images/image-20260406120431720.png)
 
 - 通过Alpha Vantage(股票)/Alpaca SDK(加密货币), 获得返回数据
 
@@ -536,7 +536,7 @@ Alpha Vantage   Alpaca SDK
 
 #### 3.1 采集阶段 + 提取阶段
 
-<img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406144231445.png" alt="image-20260406144231445" style="zoom:70%;" />
+<img src="docs/images/image-20260406144231445.png" alt="image-20260406144231445" style="zoom:70%;" />
 
 **为什么两阶段分离？** 采集和 AI 提取速度不同、可独立重试。采集失败不影响已提取数据；提取失败可对原始文章重跑，不需要重新抓取。
 
@@ -582,7 +582,7 @@ Yahoo RSS      → 热门个股讨论（市场情绪）
 
 #### 3.2 Schema设计
 
-![image-20260406144550205](/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406144550205.png)
+![image-20260406144550205](docs/images/image-20260406144550205.png)
 
 #### 3.3 字段的设计理由
 
@@ -645,7 +645,7 @@ Yahoo RSS      → 热门个股讨论（市场情绪）
 
 - 处理逻辑
 
-  <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406145947794.png" alt="image-20260406145947794" style="zoom:70%;" />
+  <img src="docs/images/image-20260406145947794.png" alt="image-20260406145947794" style="zoom:70%;" />
 
 - build prompt逻辑和返回结构
 
@@ -712,7 +712,7 @@ Yahoo RSS      → 热门个股讨论（市场情绪）
 
 #### 4.1 你在哪些步骤使用了AI？
 
-<img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406154422787.png" alt="image-20260406154422787" style="zoom:80%;" />
+<img src="docs/images/image-20260406154422787.png" alt="image-20260406154422787" style="zoom:80%;" />
 
 | 环节                                       | 使用方式             | 模型              |
 | :----------------------------------------- | :------------------- | :---------------- |
@@ -798,7 +798,7 @@ Yahoo RSS      → 热门个股讨论（市场情绪）
 
    生成PRD(vibecoding agent开发roadmap):
 
-   <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406155719052.png" alt="image-20260406155719052" style="zoom:50%;" />
+   <img src="docs/images/image-20260406155719052.png" alt="image-20260406155719052" style="zoom:50%;" />
 
 3. **制作项目SKILL**
 
@@ -808,7 +808,7 @@ Yahoo RSS      → 热门个股讨论（市场情绪）
 
    - 设计原因: 明确核心点(结构化+分析报告) + 🌟记录每一步开发的AI使用情况(docs/AI使用报告) + 🌟使用subagent开发(防止会话累积记忆稀释)
 
-     <img src="/Users/howyoulee/Library/Application Support/typora-user-images/image-20260406160258516.png" alt="image-20260406160258516" style="zoom:50%;" />
+     <img src="docs/images/image-20260406160258516.png" alt="image-20260406160258516" style="zoom:50%;" />
 
      ```
      按照这个PRD, 使用skill-creator帮我生成一个skill给vibecoding agent进行一步一步开发;
