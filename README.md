@@ -5,6 +5,23 @@
 ## 1. 代码架构
 
 ```python
+stock_insight_agent/
+│
+├── config/
+│   └── settings.py        ← 所有配置：API Key、数据库连接
+│
+├── apps/
+│   ├── pipeline/          ← 数据处理核心
+│   │   ├── models.py      ← 数据库表定义
+│   │   ├── collector.py   ← 第1步：抓新闻
+│   │   ├── extractor.py   ← 第2步：AI 结构化提取
+│   │   └── reporter.py    ← 第3步：AI 生成报告
+│   │
+│   └── api/               ← 对外接口
+│       ├── views.py       ← 所有 API 端点 + Chat 逻辑
+│       ├── urls.py        ← URL 路由
+│       └── templates/
+│           └── index.html ← 整个前端页面（单页应用）
 
 ```
 
